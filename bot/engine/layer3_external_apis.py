@@ -1,16 +1,60 @@
-import httpx
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
+
 async def _try_linkbypass_lol(url: str):
-    """Primary bypass via linkbypass.lol API."""
+    """Primary bypass via linkbypass.lol API using curl_cffi for real browser TLS fingerprint."""
     try:
+        from curl_cffi.requests import AsyncSession
+
         headers = {
             "Content-Type": "application/json",
             "xhamster": "010101010101010101010101010101010101010101010101101001",
+            "Origin": "https://linkbypass.lol",
+            "Referer": "https://linkbypass.lol/",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        payload = {"url": url, "ua": BROWSER_UA}
+        async with AsyncSession(impersonate="chrome131") as session:
+            resp = await session.post(
+                "https://linkbypass.lol/xhamster",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                logger.info(f"[linkbypass.lol] Response: {data}")
+                if data.get("status") == "success":
+                    result = data.get("url") or data.get("redirect") or data.get("result") or ""
+                    if isinstance(result, str) and result.startswith("http") and result != url:
+                        return result
+                    if "No Bypass Found" not in str(result):
+                        logger.info(f"[linkbypass.lol] Unexpected result: {result}")
+                elif data.get("status") == "error":
+                    logger.warning(f"[linkbypass.lol] Error: {data.get('message', '')}")
+            else:
+                logger.warning(f"[linkbypass.lol] HTTP {resp.status_code}")
+    except ImportError:
+        logger.warning("[linkbypass.lol] curl_cffi not installed, falling back to httpx")
+        return await _try_linkbypass_lol_httpx(url)
+    except Exception as e:
+        logger.warning(f"[linkbypass.lol] Exception: {e}")
+    return None
+
+
+async def _try_linkbypass_lol_httpx(url: str):
+    """Fallback: try linkbypass.lol via httpx (may get bot-detected)."""
+    try:
+        import httpx
+        headers = {
+            "Content-Type": "application/json",
+            "xhamster": "0101010101010101010101010101010101010101010101101001",
             "User-Agent": BROWSER_UA,
             "Origin": "https://linkbypass.lol",
             "Referer": "https://linkbypass.lol/",
@@ -19,9 +63,6 @@ async def _try_linkbypass_lol(url: str):
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
-            "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
         }
         payload = {"url": url, "ua": BROWSER_UA}
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -32,18 +73,13 @@ async def _try_linkbypass_lol(url: str):
             )
             if resp.status_code == 200:
                 data = resp.json()
-                logger.info(f"[linkbypass.lol] Response: {data}")
+                logger.info(f"[linkbypass.lol-httpx] Response: {data}")
                 if data.get("status") == "success":
                     result = data.get("url") or data.get("redirect") or data.get("result") or ""
                     if isinstance(result, str) and result.startswith("http") and result != url:
                         return result
-                elif data.get("status") == "error":
-                    msg = data.get("message", "")
-                    logger.warning(f"[linkbypass.lol] Error: {msg}")
-            else:
-                logger.warning(f"[linkbypass.lol] HTTP {resp.status_code}")
     except Exception as e:
-        logger.warning(f"[linkbypass.lol] Exception: {e}")
+        logger.warning(f"[linkbypass.lol-httpx] Exception: {e}")
     return None
 
 
@@ -62,8 +98,10 @@ FALLBACK_APIS = [
     },
 ]
 
+
 async def _try_fallback_apis(url: str):
     """Try fallback bypass APIs."""
+    import httpx
     for api in FALLBACK_APIS:
         try:
             target = api["url"].format(url=url)
