@@ -1,4 +1,6 @@
-import httpx, re, base64
+import httpx
+import re
+import base64
 
 DOMAINS = ["adf.ly","j.gs","q.gs","ay.gy","atominik.com","tinyium.com","microify.com","pintient.com","babfrm.com"]
 
@@ -8,22 +10,37 @@ async def bypass(url):
         async with httpx.AsyncClient(follow_redirects=False, timeout=15.0, headers=headers) as client:
             resp = await client.get(url)
             text = resp.text
-            match = re.search(r"var ysmm = '([^']+)'", text)
+
+            # Method 1: Look for var url in script
+            match = re.search(r'var\s+yab\s*=\s*["\']([A-Za-z0-9+/=]+)["\']', text)
             if match:
-                encoded = match.group(1)
-                codes = []
-                for i in range(0, len(encoded), 2):
-                    codes.append(int(encoded[i:i+2], 16))
-                decoded = "".join(chr(c) for c in codes)
                 try:
-                    result = base64.b64decode(decoded).decode()
-                    if result.startswith("http"):
-                        return result
+                    decoded = base64.b64decode(match.group(1)).decode('utf-8')
+                    if decoded.startswith('http'):
+                        return decoded
                 except:
                     pass
-            match2 = re.search(r'var url\s*=\s*["\'](https?://[^"\']+)["\'"]', text)
+
+            # Method 2: Look for var url = "https:..."
+            match2 = re.search(r'var url\s*=\s*["\'](https?://[^"\']+)["\']', text)
             if match2:
                 return match2.group(1)
-    except:
-        pass
-    return None
+
+            # Method 3: Check location header
+            if resp.status_code in (301, 302, 303, 307, 308):
+                loc = resp.headers.get('location', '')
+                if loc and loc != url:
+                    return loc
+
+            # Method 4: Decode all base64 strings
+            for m in re.finditer(r'["\']([A-Za-z0-9+/=]{20,})["\']', text):
+                try:
+                    d = base64.b64decode(m.group(1)).decode('utf-8')
+                    if d.startswith('http'):
+                        return d
+                except:
+                    continue
+
+        return None
+    except Exception:
+        return None
