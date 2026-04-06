@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: bypass-pro-bot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_USER_ID
+        sync: false
+      - key: PORT
+        value: "10000"
