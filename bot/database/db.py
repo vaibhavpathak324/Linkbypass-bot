@@ -28,20 +28,21 @@ async def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
         original_url TEXT, shortener TEXT, destination_url TEXT,
         final_url TEXT, method TEXT, time_taken REAL,
-        created_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE TABLE IF NOT EXISTS shorteners (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-        api_key TEXT NOT NULL, api_url TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS shortener_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, shortener_name TEXT NOT NULL,
+        display_name TEXT NOT NULL, api_key TEXT NOT NULL,
+        api_endpoint TEXT NOT NULL, api_format TEXT DEFAULT 'json_shortenedUrl',
         is_active INTEGER DEFAULT 0, intercept_percent INTEGER DEFAULT 30,
-        total_links INTEGER DEFAULT 0,
+        total_links_created INTEGER DEFAULT 0, priority INTEGER DEFAULT 5,
         last_tested TIMESTAMP NULL, last_test_result TEXT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS force_sub_channels (
         id INTEGER PRIMARY KEY AUTOINCREMENT, channel_username TEXT UNIQUE NOT NULL,
         channel_id INTEGER NULL, is_active INTEGER DEFAULT 1,
-        added_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
+        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS analytics_daily (
         id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE UNIQUE NOT NULL,
@@ -61,7 +62,7 @@ async def init_db():
         message_type TEXT DEFAULT 'text', media_file_id TEXT NULL,
         total_target INTEGER DEFAULT 0, sent_count INTEGER DEFAULT 0,
         failed_count INTEGER DEFAULT 0, status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, description TEXT NULL,
@@ -97,7 +98,9 @@ async def init_db():
         'shortener_rotation_mode': 'random',
         'batch_limit_premium': '10',
         'signup_bonus': '5',
-        'signup_enabled': '1'
+        'signup_enabled': '1',
+        'batch_limit_free': '5',
+        'antispam_enabled': 'true'
     }
     for k, v in defaults.items():
         await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
@@ -161,12 +164,12 @@ async def get_user_count():
 
 async def get_active_shortener_configs():
     db = await get_db()
-    cur = await db.execute("SELECT * FROM shorteners WHERE is_active=1")
+    cur = await db.execute("SELECT * FROM shortener_configs WHERE is_active=1 ORDER BY priority ASC")
     return [dict(r) for r in await cur.fetchall()]
 
 async def increment_shortener_links(shortener_id):
     db = await get_db()
-    await db.execute("UPDATE shorteners SET total_links=total_links+1 WHERE id=?", (shortener_id,))
+    await db.execute("UPDATE shortener_configs SET total_links_created=total_links_created+1 WHERE id=?", (shortener_id,))
     await db.commit()
 
 async def update_shortener_stats(shortener, success):

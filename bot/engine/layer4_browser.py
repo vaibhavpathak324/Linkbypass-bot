@@ -17,7 +17,7 @@ async def attempt(url):
 
         t = resp.text
         patterns = [
-            r'var\s+url\s*=\s*["\']( https?://[^"\']+)["\']',
+            r'var\s+url\s*=\s*["\'](https?://[^"\']+)["\']',
             r'href=["\']([^"\']*(?:mega|drive\.google|mediafire|dropbox)[^"\']*)["\']',
             r'window\.open\(["\']([^"\']+)["\']',
         ]

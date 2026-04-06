@@ -67,7 +67,7 @@ async def dashboard(callback: CallbackQuery):
     db = await get_db()
     total = (await (await db.execute("SELECT COUNT(*) FROM users")).fetchone())[0]
     today = datetime.date.today().isoformat()
-    new_today = (await (await db.execute("SELECT COUNT(*) FROM users WHERE date(joined_at)=?", (today,))).fetchone())[0]
+    new_today = (await (await db.execute("SELECT COUNT(*) FROM users WHERE date(created_at)=?", (today,))).fetchone())[0]
     premium = (await (await db.execute("SELECT COUNT(*) FROM users WHERE is_premium=1")).fetchone())[0]
     banned = (await (await db.execute("SELECT COUNT(*) FROM users WHERE is_banned=1")).fetchone())[0]
     bypasses_today = (await (await db.execute("SELECT COUNT(*) FROM bypass_history WHERE date(created_at)=?", (today,))).fetchone())[0]
@@ -405,8 +405,8 @@ async def revenue(callback: CallbackQuery):
     if not is_admin(callback.from_user.id): return
     db = await get_db()
     today = datetime.date.today().isoformat()
-    today_links = (await (await db.execute("SELECT COUNT(*) FROM bypass_history WHERE injected_url IS NOT NULL AND date(created_at)=?", (today,))).fetchone())[0]
-    total_links = (await (await db.execute("SELECT COUNT(*) FROM bypass_history WHERE injected_url IS NOT NULL")).fetchone())[0]
+    today_links = (await (await db.execute("SELECT COUNT(*) FROM bypass_history WHERE date(created_at)=?", (today,))).fetchone())[0]
+    total_links = (await (await db.execute("SELECT COUNT(*) FROM bypass_history ")).fetchone())[0]
     cpm = 6
     today_rev = round(today_links * cpm / 1000, 2)
     total_rev = round(total_links * cpm / 1000, 2)
@@ -422,14 +422,14 @@ async def bypass_stats(callback: CallbackQuery):
     if not is_admin(callback.from_user.id): return
     db = await get_db()
     total = (await (await db.execute("SELECT COUNT(*) FROM bypass_history")).fetchone())[0]
-    methods = await (await db.execute("SELECT bypass_method, COUNT(*) as cnt FROM bypass_history GROUP BY bypass_method ORDER BY cnt DESC")).fetchall()
-    top = await (await db.execute("SELECT shortener_detected, COUNT(*) as cnt FROM bypass_history GROUP BY shortener_detected ORDER BY cnt DESC LIMIT 10")).fetchall()
+    methods = await (await db.execute("SELECT method, COUNT(*) as cnt FROM bypass_history GROUP BY method ORDER BY cnt DESC")).fetchall()
+    top = await (await db.execute("SELECT shortener, COUNT(*) as cnt FROM bypass_history GROUP BY shortener ORDER BY cnt DESC LIMIT 10")).fetchall()
     text = f"🔓 Bypass Stats\n━━━━━━━━━━━━━━━━━━━━━━━━\n\nTotal: {total}\n\nBy Method:\n"
     for m in methods:
-        text += f"• {m['bypass_method']}: {m['cnt']}\n"
+        text += f"• {m['method']}: {m['cnt']}\n"
     text += "\nTop Shorteners:\n"
     for i, t in enumerate(top, 1):
-        text += f"{i}. {t['shortener_detected']}: {t['cnt']}\n"
+        text += f"{i}. {t['shortener']}: {t['cnt']}\n"
     text += f"\nSupported: {len(KNOWN_SHORTENER_DOMAINS)}+"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Back", callback_data="admin_menu")]])
     await callback.message.edit_text(text, reply_markup=kb)

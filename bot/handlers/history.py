@@ -16,5 +16,5 @@ async def cmd_history(message: Message):
         return
     text = "\U0001f4cb Your Bypass History (last 15):\n\n"
     for i, r in enumerate(rows, 1):
-        text += f"{i}. \U0001f513 {truncate(r['original_url'],30)} -> {truncate(r['destination_url'],30)}\n   {r['bypass_time_ms']}ms | {r['shortener_detected']}\n\n"
+        text += f"{i}. \U0001f513 {truncate(r['original_url'],30)} -> {truncate(r['destination_url'],30)}\n   {r['time_taken']}ms | {r['shortener']}\n\n"
     await message.answer(text)
