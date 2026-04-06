@@ -1,246 +1,263 @@
 import re
-import base64
+import time
 import logging
 import asyncio
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
-DOMAINS = [
-    "vplink.in","arolinks.com","linkshortify.com","link1s.com","earnlink.in",
-    "za.gl","short-url.link","link4earn.com","earn4link.in","indianshortner.com",
-    "adrinolinks.com","techymozo.com","atglinks.com","rushload.com","short2url.in",
-    "dropmb.com","ez4short.com","megafly.in","usalink.io","try2link.com",
-    "try2links.com","stfly.me","stfly.xyz","shortingly.me","shortingly.in",
-    "moneykamalo.com","pglink.in","shareus.in","shareus.io","shortzon.com",
-    "tii.la","xpshort.com","shrinke.me","urlshortx.com","urlfly.me",
-    "clicksfly.com","clk.wiki","tnlink.in","onepagelink.com","quicr.co",
-    "highcpmlink.com","hitfly.net","gyanilinks.com","gyanilinks.in","tekfly.me",
-    "pkin.me","modiurl.com","owllink.net","linksfly.link","powerlinks.site",
-    "modmakers.xyz","modmakers.in","droplink.co","droplinks.co","rocklinks.net",
-    "linkpays.in","dulink.in","mplaylink.com","tnshort.net","easysky.in",
-    "indiurl.com","giantlink.in","indianlink.in","publicearn.com","go2url.in",
-    "geturl.in","cashurl.in","earnow.online","coinfly.in","aylink.co",
-    "adlinkfly.com","adlinkfly.xyz","adlinkfly.st",
-    "inshorturl.in","inshorturl.com",
-]
+ADLINKFLY_SITES = {
+    "gplinks.co": {"wait": 10, "referer": "https://mynewsmedia.co/"},
+    "gplinks.com": {"wait": 10, "referer": "https://mynewsmedia.co/"},
+    "gplinks.in": {"wait": 10, "referer": "https://mynewsmedia.co/"},
+    "droplink.co": {"wait": 3.1},
+    "droplinks.co": {"wait": 3.1},
+    "rocklinks.net": {"wait": 10, "domain_override": "https://blog.disheye.com", "query": "?quelle="},
+    "shortingly.in": {"wait": 5, "referer": "https://tech.gyanitheme.com/"},
+    "shortingly.me": {"wait": 5, "referer": "https://tech.gyanitheme.com/"},
+    "xpshort.com": {"wait": 8, "referer": "https://www.animalwallpapers.online/"},
+    "push.bdnewsx.com": {"wait": 8, "referer": "https://www.animalwallpapers.online/"},
+    "techymozo.com": {"wait": 8, "referer": "https://www.animalwallpapers.online/"},
+    "short2url.in": {"wait": 10, "domain_override": "https://techyuth.xyz/blog", "referer": "https://blog.coin2pay.xyz/"},
+    "try2link.com": {"wait": 7, "referer": "https://newforex.online/"},
+    "try2links.com": {"wait": 7, "referer": "https://newforex.online/"},
+    "gyanilinks.com": {"wait": 5, "domain_override": "https://go.hipsonyc.com"},
+    "gtlinks.me": {"wait": 5, "domain_override": "https://go.hipsonyc.com"},
+    "go.flashlink.in": {"wait": 15, "domain_override": "https://files.earnash.com", "referer": "https://flash1.cordtpoint.co.in"},
+    "du-link.in": {"wait": 5},
+    "ez4short.com": {"wait": 5},
+    "krownlinks.me": {"wait": 5},
+    "adrinolinks.com": {"wait": 5},
+    "adrinolinks.in": {"wait": 5},
+    "link.tnlink.in": {"wait": 5},
+    "tnlink.in": {"wait": 5},
+    "link.tnshort.net": {"wait": 5},
+    "tnshort.net": {"wait": 5},
+    "inshorturl.in": {"wait": 5},
+    "inshorturl.com": {"wait": 5},
+    "vplink.in": {"wait": 5},
+    "arolinks.com": {"wait": 5},
+    "linkshortify.com": {"wait": 5},
+    "link1s.com": {"wait": 5},
+    "earnlink.in": {"wait": 5},
+    "za.gl": {"wait": 5},
+    "short-url.link": {"wait": 5},
+    "link4earn.com": {"wait": 5},
+    "earn4link.in": {"wait": 5},
+    "indianshortner.com": {"wait": 5},
+    "atglinks.com": {"wait": 5},
+    "rushload.com": {"wait": 5},
+    "dropmb.com": {"wait": 5},
+    "megafly.in": {"wait": 5},
+    "usalink.io": {"wait": 5},
+    "stfly.me": {"wait": 5},
+    "stfly.xyz": {"wait": 5},
+    "moneykamalo.com": {"wait": 5},
+    "pglink.in": {"wait": 5},
+    "shortzon.com": {"wait": 5},
+    "tii.la": {"wait": 5},
+    "shrinke.me": {"wait": 5},
+    "urlshortx.com": {"wait": 5},
+    "urlfly.me": {"wait": 5},
+    "clicksfly.com": {"wait": 5},
+    "clk.wiki": {"wait": 5},
+    "onepagelink.com": {"wait": 5},
+    "go.onepagelink.in": {"wait": 5},
+    "quicr.co": {"wait": 5},
+    "highcpmlink.com": {"wait": 5},
+    "hitfly.net": {"wait": 5},
+    "gyanilinks.in": {"wait": 5},
+    "tekfly.me": {"wait": 5},
+    "pkin.me": {"wait": 5},
+    "modiurl.com": {"wait": 5},
+    "owllink.net": {"wait": 5},
+    "linksfly.link": {"wait": 5},
+    "powerlinks.site": {"wait": 5},
+    "modmakers.xyz": {"wait": 5},
+    "modmakers.in": {"wait": 5},
+    "linkpays.in": {"wait": 5},
+    "mplaylink.com": {"wait": 5},
+    "easysky.in": {"wait": 5},
+    "indiurl.com": {"wait": 5},
+    "giantlink.in": {"wait": 5},
+    "indianlink.in": {"wait": 5},
+    "publicearn.com": {"wait": 5},
+    "go2url.in": {"wait": 5},
+    "geturl.in": {"wait": 5},
+    "cashurl.in": {"wait": 5},
+    "earnow.online": {"wait": 5},
+    "coinfly.in": {"wait": 5},
+    "aylink.co": {"wait": 5},
+    "adlinkfly.com": {"wait": 5},
+    "adlinkfly.xyz": {"wait": 5},
+    "adlinkfly.st": {"wait": 5},
+    "go.indiurl.in.net": {"wait": 5},
+    "linkbnao.com": {"wait": 5},
+    "indianshortner.in": {"wait": 5},
+    "mdiskshortners.in": {"wait": 5},
+    "mdisky.link": {"wait": 5},
+    "mdisklink.link": {"wait": 5},
+    "rslinks.net": {"wait": 5},
+    "kingurl.in": {"wait": 5},
+    "link.vipurl.in": {"wait": 5},
+    "vipurl.in": {"wait": 5},
+    "shareus.in": {"wait": 5},
+    "shareus.io": {"wait": 5},
+}
+
+DOMAINS = list(ADLINKFLY_SITES.keys())
+
+_executor = ThreadPoolExecutor(max_workers=3)
+
+
+def _gplinks_sync(url):
+    import cloudscraper
+    from bs4 import BeautifulSoup
+    client = cloudscraper.create_scraper(allow_brotli=False)
+    resp = client.get(url, allow_redirects=False, timeout=15)
+    location = resp.headers.get("Location", "")
+    if not location:
+        return None
+    vid = location.split("=")[-1]
+    url_with_vid = f"{url}/?{vid}"
+    resp2 = client.get(url_with_vid, allow_redirects=False, timeout=15)
+    soup = BeautifulSoup(resp2.content, "html.parser")
+    go_link = soup.find(id="go-link")
+    if not go_link:
+        return None
+    inputs = go_link.find_all(name="input")
+    data = {inp.get("name"): inp.get("value") for inp in inputs if inp.get("name")}
+    time.sleep(10)
+    headers = {"x-requested-with": "XMLHttpRequest"}
+    p = urlparse(url)
+    resp3 = client.post(f"{p.scheme}://{p.netloc}/links/go", data=data, headers=headers, timeout=15)
+    try:
+        return resp3.json()["url"]
+    except Exception:
+        return None
+
+
+def _generic_adlinkfly_sync(url, config):
+    import cloudscraper
+    from bs4 import BeautifulSoup
+    client = cloudscraper.create_scraper(allow_brotli=False)
+    p = urlparse(url)
+    domain_override = config.get("domain_override")
+    DOMAIN = domain_override if domain_override else f"{p.scheme}://{p.netloc}"
+    url_clean = url.rstrip("/")
+    code = url_clean.split("/")[-1]
+    query = config.get("query", "")
+    final_url = f"{DOMAIN}/{code}{query}"
+    headers = {}
+    if config.get("referer"):
+        headers["referer"] = config["referer"]
+    resp = client.get(final_url, headers=headers, timeout=20)
+    resp_domain = urlparse(str(resp.url)).netloc
+    if resp_domain != p.netloc and resp_domain != urlparse(DOMAIN).netloc:
+        return str(resp.url)
+    soup = BeautifulSoup(resp.content, "html.parser")
+    go_link = soup.find(id="go-link")
+    if go_link:
+        inputs = go_link.find_all(name="input")
+    else:
+        inputs = soup.find_all("input")
+    data = {inp.get("name"): inp.get("value") for inp in inputs if inp.get("name")}
+    if not data:
+        form = soup.find("form")
+        if form:
+            action = form.get("action", "")
+            if action:
+                resp2 = client.get(action if action.startswith("http") else DOMAIN + action, timeout=15)
+                soup2 = BeautifulSoup(resp2.content, "html.parser")
+                inputs = soup2.find_all("input")
+                data = {inp.get("name"): inp.get("value") for inp in inputs if inp.get("name")}
+    if not data:
+        return None
+    wait_time = config.get("wait", 5)
+    time.sleep(wait_time)
+    post_headers = {"content-type": "application/x-www-form-urlencoded", "x-requested-with": "XMLHttpRequest"}
+    go_endpoint = f"{DOMAIN}/links/go"
+    resp3 = client.post(go_endpoint, data=data, headers=post_headers, timeout=15)
+    try:
+        result = resp3.json()
+        dest = result.get("url", "")
+        if dest and dest.startswith("http"):
+            return dest
+    except Exception:
+        pass
+    final = str(resp3.url)
+    if urlparse(final).netloc != urlparse(DOMAIN).netloc:
+        return final
+    return None
+
+
+def _try2link_sync(url):
+    import cloudscraper
+    from bs4 import BeautifulSoup
+    client = cloudscraper.create_scraper(allow_brotli=False)
+    url_clean = url.rstrip("/")
+    params = (("d", int(time.time()) + (60 * 4)),)
+    r = client.get(url_clean, params=params, headers={"Referer": "https://newforex.online/"}, timeout=15)
+    soup = BeautifulSoup(r.text, "html.parser")
+    go_link = soup.find(id="go-link")
+    if not go_link:
+        return None
+    inputs = go_link.find_all(name="input")
+    data = {inp.get("name"): inp.get("value") for inp in inputs if inp.get("name")}
+    time.sleep(7)
+    headers = {"Host": "try2link.com", "X-Requested-With": "XMLHttpRequest", "Origin": "https://try2link.com", "Referer": url_clean}
+    resp = client.post("https://try2link.com/links/go", headers=headers, data=data, timeout=15)
+    try:
+        return resp.json()["url"]
+    except Exception:
+        return None
+
+
+def _droplink_sync(url):
+    import cloudscraper
+    from bs4 import BeautifulSoup
+    client = cloudscraper.create_scraper(allow_brotli=False)
+    res = client.get(url, timeout=15)
+    ref = re.findall(r"action\s*=\s*[\x27\"](.*?)[\x27\"]", res.text)
+    if ref:
+        h = {"referer": ref[0]}
+        res = client.get(url, headers=h, timeout=15)
+    soup = BeautifulSoup(res.content, "html.parser")
+    inputs = soup.find_all("input")
+    data = {inp.get("name"): inp.get("value") for inp in inputs if inp.get("name")}
+    headers = {"content-type": "application/x-www-form-urlencoded", "x-requested-with": "XMLHttpRequest"}
+    p = urlparse(url)
+    final_url = f"{p.scheme}://{p.netloc}/links/go"
+    time.sleep(3.1)
+    resp = client.post(final_url, data=data, headers=headers, timeout=15)
+    try:
+        result = resp.json()
+        return result.get("url")
+    except Exception:
+        return None
 
 
 async def bypass(url):
-    """AdLinkFly bypass using cloudscraper to handle Cloudflare + multi-step forms."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    domain = urlparse(url).netloc.lower()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    config = ADLINKFLY_SITES.get(domain, {"wait": 5})
     try:
-        import cloudscraper
-        from bs4 import BeautifulSoup
-    except ImportError:
-        logger.warning("[AdLinkFly] cloudscraper/bs4 not installed")
-        return None
-
-    try:
-        client = cloudscraper.create_scraper(
-            allow_brotli=False,
-            browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
-        )
-        p = urlparse(url)
-        base = f"{p.scheme}://{p.netloc}"
-        orig_domain = p.netloc
-
-        # Step 1: GET the initial page (cloudscraper handles CF challenge)
-        resp = client.get(url, timeout=20)
-        text = resp.text
-
-        # Check if we already got redirected to destination
-        final_url = str(resp.url)
-        final_domain = urlparse(final_url).netloc
-        if final_domain != orig_domain and not _is_shortener_domain(final_domain):
-            logger.info(f"[AdLinkFly] Direct redirect to: {final_url}")
-            return final_url
-
-        soup = BeautifulSoup(text, 'html.parser')
-
-        # Method 1: Look for the "go" or "links/go" POST endpoint
-        dest = await _try_adlinkfly_go(client, soup, text, url, base)
-        if dest:
-            return dest
-
-        # Method 2: base64-encoded destination in JS
-        dest = _try_base64_decode(text)
-        if dest and dest != url:
-            return dest
-
-        # Method 3: Look for destination URL in page source
-        dest = _try_regex_extraction(text, url)
-        if dest:
-            return dest
-
-        # Method 4: Follow form submissions iteratively (multi-step)
-        dest = await _try_form_chain(client, soup, text, url, base)
-        if dest:
-            return dest
-
-        # Method 5: Check for /go/ or /out/ links
-        for a in soup.find_all('a', href=True):
-            href = a.get('href', '')
-            if any(x in href for x in ['/go/', '/goto/', '/out/', '/redirect/']):
-                full = href if href.startswith('http') else urljoin(base, href)
-                resp2 = client.get(full, timeout=15, allow_redirects=True)
-                final2 = str(resp2.url)
-                if urlparse(final2).netloc != orig_domain:
-                    return final2
-
-        logger.warning(f"[AdLinkFly] All methods failed for {url}")
+        if "gplinks" in domain:
+            result = await loop.run_in_executor(_executor, _gplinks_sync, url)
+        elif "try2link" in domain:
+            result = await loop.run_in_executor(_executor, _try2link_sync, url)
+        elif "droplink" in domain:
+            result = await loop.run_in_executor(_executor, _droplink_sync, url)
+        else:
+            result = await loop.run_in_executor(_executor, _generic_adlinkfly_sync, url, config)
+        if result and result.startswith("http"):
+            logger.info(f"[AdLinkFly] Bypassed {domain}: {result}")
+            return result
         return None
     except Exception as e:
-        logger.warning(f"[AdLinkFly] Error: {e}")
+        logger.warning(f"[AdLinkFly] Error for {domain}: {e}")
         return None
-
-
-async def _try_adlinkfly_go(client, soup, text, url, base):
-    """Try the standard AdLinkFly /links/go POST method."""
-    form = soup.find('form', {'method': re.compile('post', re.I)})
-    if not form:
-        form = soup.find('form', id=re.compile('link|go|bypass', re.I))
-    if not form:
-        return None
-
-    action = form.get('action', '')
-    if not action:
-        action = f"{base}/links/go"
-    elif not action.startswith('http'):
-        action = urljoin(base, action)
-
-    data = {}
-    for inp in form.find_all('input'):
-        name = inp.get('name')
-        value = inp.get('value', '')
-        if name:
-            data[name] = value
-
-    if not data:
-        return None
-
-    timer_match = re.search(r'(?:seconds?|timer|countdown)\s*[:=]\s*(\d+)', text, re.I)
-    wait_time = int(timer_match.group(1)) if timer_match else 5
-    wait_time = min(wait_time, 15)
-    logger.info(f"[AdLinkFly] Waiting {wait_time}s for timer...")
-    await asyncio.sleep(wait_time)
-
-    headers = {
-        "content-type": "application/x-www-form-urlencoded",
-        "x-requested-with": "XMLHttpRequest",
-        "referer": url,
-    }
-
-    try:
-        resp = client.post(action, headers=headers, data=data, timeout=15)
-        try:
-            j = resp.json()
-            dest = j.get("url") or j.get("destination") or j.get("link") or j.get("redirect")
-            if dest and dest.startswith("http") and dest != url:
-                return dest
-        except Exception:
-            pass
-
-        final = str(resp.url)
-        orig_domain = urlparse(url).netloc
-        if urlparse(final).netloc != orig_domain:
-            return final
-
-        dest = _try_regex_extraction(resp.text, url)
-        if dest:
-            return dest
-    except Exception as e:
-        logger.debug(f"[AdLinkFly] Go POST failed: {e}")
-
-    return None
-
-
-async def _try_form_chain(client, soup, text, url, base):
-    """Follow form submissions through multiple steps."""
-    orig_domain = urlparse(url).netloc
-    current_url = url
-    current_text = text
-    current_soup = soup
-
-    for step in range(5):
-        forms = current_soup.find_all('form')
-        if not forms:
-            break
-
-        for form in forms:
-            action = form.get('action', current_url)
-            if not action.startswith('http'):
-                action = urljoin(base, action)
-            method = (form.get('method', 'get')).lower()
-
-            data = {}
-            for inp in form.find_all(['input', 'textarea']):
-                name = inp.get('name')
-                if name:
-                    data[name] = inp.get('value', '')
-
-            if not data:
-                continue
-
-            try:
-                await asyncio.sleep(2)
-                if method == 'post':
-                    resp = client.post(action, data=data, timeout=15)
-                else:
-                    resp = client.get(action, params=data, timeout=15)
-
-                final = str(resp.url)
-                if urlparse(final).netloc != orig_domain and not _is_shortener_domain(urlparse(final).netloc):
-                    return final
-
-                current_text = resp.text
-                current_soup = BeautifulSoup(current_text, 'html.parser')
-                current_url = final
-
-                dest = _try_regex_extraction(current_text, url)
-                if dest:
-                    return dest
-            except Exception:
-                continue
-
-    return None
-
-
-def _try_base64_decode(text):
-    patterns = [
-        r'atob\(["\']([ A-Za-z0-9+/=]+)["\'\])',
-        r'decode\(["\']([ A-Za-z0-9+/=]+)["\'\])',
-    ]
-    for pat in patterns:
-        for m in re.finditer(pat, text):
-            try:
-                decoded = base64.b64decode(m.group(1)).decode('utf-8')
-                if decoded.startswith('http'):
-                    return decoded
-            except Exception:
-                continue
-    return None
-
-
-def _try_regex_extraction(text, original_url):
-    orig_domain = urlparse(original_url).netloc
-    patterns = [
-        r'(?:var\s+(?:url|link|dest|destination|go_url|final_url)\s*=\s*["\'\])(https?://[^"\']+)["\'\]',
-        r'(?:window\.location(?:\.href)?\s*=\s*["\'\])(https?://[^"\']+)["\'\]',
-        r'"url"\s*:\s*"(https?://[^"]+)"',
-        r'"destination"\s*:\s*"(https?://[^"]+)"',
-    ]
-    for pat in patterns:
-        for m in re.finditer(pat, text):
-            found = m.group(1).replace('\\/', '/')
-            if found.startswith('http') and urlparse(found).netloc != orig_domain:
-                if not _is_shortener_domain(urlparse(found).netloc):
-                    return found
-    return None
-
-
-def _is_shortener_domain(domain):
-    shortener_indicators = [
-        'inshorturl', 'gplinks', 'adlinkfly', 'shrinkme', 'shareus',
-        'droplink', 'clicksfly', 'linkvertise', 'exe.io',
-    ]
-    return any(s in domain.lower() for s in shortener_indicators)
