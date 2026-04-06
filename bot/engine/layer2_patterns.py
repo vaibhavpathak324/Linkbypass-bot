@@ -1,11 +1,11 @@
 from bot.engine.url_utils import extract_domain
-from bot.engine.patterns import adlinkfly, linkvertise, ouo, adfly, generic
+from bot.engine.patterns import adlinkfly, linkvertise, ouo, adfly, generic, gplinks
 
 HANDLERS = {}
 
 def build_handler_map():
     global HANDLERS
-    modules = [adlinkfly, linkvertise, ouo, adfly, generic]
+    modules = [gplinks, adlinkfly, linkvertise, ouo, adfly, generic]
     for mod in modules:
         if hasattr(mod, 'DOMAINS'):
             for d in mod.DOMAINS:
@@ -21,12 +21,12 @@ async def attempt(url, shortener_name=None):
             result = await handler.bypass(url)
             if result and result != url:
                 return result
-        except:
+        except Exception:
             pass
     try:
         result = await generic.bypass(url)
         if result and result != url:
             return result
-    except:
+    except Exception:
         pass
     return None
