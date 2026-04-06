@@ -18,15 +18,17 @@ async def init_db():
         user_id INTEGER PRIMARY KEY, username TEXT, full_name TEXT,
         language TEXT DEFAULT 'en', is_premium INTEGER DEFAULT 0,
         premium_until TIMESTAMP NULL, premium_source TEXT NULL,
-        daily_bypasses INTEGER DEFAULT 0, total_bypasses INTEGER DEFAULT 0,
+        daily_bypasses_used INTEGER DEFAULT 0, total_bypasses INTEGER DEFAULT 0,
         referral_code TEXT UNIQUE, referred_by INTEGER NULL,
-        referral_count INTEGER DEFAULT 0, bonus_bypasses INTEGER DEFAULT 0,
+        total_referrals INTEGER DEFAULT 0, bonus_credits INTEGER DEFAULT 0,
+        is_banned INTEGER DEFAULT 0,
         last_bypass REAL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS bypass_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-        original_url TEXT, bypassed_url TEXT, shortener TEXT,
-        method TEXT, time_taken REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        original_url TEXT, shortener TEXT, destination_url TEXT,
+        final_url TEXT, method TEXT, time_taken REAL,
+        created_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS shorteners (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -39,7 +41,7 @@ async def init_db():
     CREATE TABLE IF NOT EXISTS force_sub_channels (
         id INTEGER PRIMARY KEY AUTOINCREMENT, channel_username TEXT UNIQUE NOT NULL,
         channel_id INTEGER NULL, is_active INTEGER DEFAULT 1,
-        added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        added_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS analytics_daily (
         id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE UNIQUE NOT NULL,
@@ -59,7 +61,7 @@ async def init_db():
         message_type TEXT DEFAULT 'text', media_file_id TEXT NULL,
         total_target INTEGER DEFAULT 0, sent_count INTEGER DEFAULT 0,
         failed_count INTEGER DEFAULT 0, status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, description TEXT NULL,
@@ -76,13 +78,25 @@ async def init_db():
     );
     """)
 
-    # Default settings
+    # Default settings - keys match what handlers actually use
     defaults = {
-        'daily_limit': '15', 'cooldown_seconds': '5',
-        'bonus_per_referred': '0', 'intercept_links_enabled': '0',
-        'welcome_message': '', 'maintenance_mode': '0',
-        'ads_enabled': '0', 'premium_price_stars': '150',
-        'premium_days': '30', 'signup_bonus': '5',
+        'free_daily_limit': '15',
+        'cooldown_seconds': '5',
+        'referral_bonus_credits': '5',
+        'inject_links_enabled': '0',
+        'welcome_message': '',
+        'maintenance_mode': '0',
+        'ads_enabled': '0',
+        'premium_stars_price': '150',
+        'premium_stars_days': '30',
+        'premium_stars_enabled': '1',
+        'premium_referral_count': '3',
+        'premium_referral_days': '3',
+        'premium_referral_enabled': 'true',
+        'force_sub_enabled': 'false',
+        'shortener_rotation_mode': 'random',
+        'batch_limit_premium': '10',
+        'signup_bonus': '5',
         'signup_enabled': '1'
     }
     for k, v in defaults.items():
@@ -100,15 +114,23 @@ async def set_setting(key, value):
     await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
     await db.commit()
 
-async def get_or_create_user(user_id, username=None, full_name=None):
+async def get_or_create_user(user_id, tg_user=None, full_name=None):
     db = await get_db()
     cur = await db.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     user = await cur.fetchone()
     if not user:
+        # Extract username and full_name from aiogram User object if passed
+        uname = None
+        fname = full_name
+        if tg_user is not None and hasattr(tg_user, 'username'):
+            uname = tg_user.username or ''
+            fname = tg_user.full_name or ''
+        elif isinstance(tg_user, str):
+            uname = tg_user
         ref_code = secrets.token_hex(4)
         await db.execute(
             "INSERT INTO users (user_id, username, full_name, referral_code) VALUES (?, ?, ?, ?)",
-            (user_id, username, full_name, ref_code))
+            (user_id, uname, fname, ref_code))
         await db.commit()
         cur = await db.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
         user = await cur.fetchone()
@@ -116,19 +138,19 @@ async def get_or_create_user(user_id, username=None, full_name=None):
 
 async def increment_daily_bypass(user_id):
     db = await get_db()
-    await db.execute("UPDATE users SET daily_bypasses=daily_bypasses+1, total_bypasses=total_bypasses+1 WHERE user_id=?", (user_id,))
+    await db.execute("UPDATE users SET daily_bypasses_used=daily_bypasses_used+1, total_bypasses=total_bypasses+1 WHERE user_id=?", (user_id,))
     await db.commit()
 
 async def reset_daily_bypasses():
     db = await get_db()
-    await db.execute("UPDATE users SET daily_bypasses=0")
+    await db.execute("UPDATE users SET daily_bypasses_used=0")
     await db.commit()
 
-async def save_bypass_history(user_id, original, bypassed, shortener, method, time_taken):
+async def save_bypass_history(user_id, original_url, shortener, destination_url, final_url, method, time_taken):
     db = await get_db()
     await db.execute(
-        "INSERT INTO bypass_history (user_id, original_url, bypassed_url, shortener, method, time_taken) VALUES (?,?,?,?,?,?)",
-        (user_id, original, bypassed, shortener, method, time_taken))
+        "INSERT INTO bypass_history (user_id, original_url, shortener, destination_url, final_url, method, time_taken) VALUES (?,?,?,?,?,?,?)",
+        (user_id, original_url, shortener, destination_url, final_url, method, time_taken))
     await db.commit()
 
 async def get_user_count():
