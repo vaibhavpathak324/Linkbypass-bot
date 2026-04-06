@@ -1,8 +1,12 @@
 import httpx
 import re
+import logging
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
+
 async def attempt(url):
+    """Follow redirects and check for meta/JS redirects. Returns URL string or None."""
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -22,18 +26,18 @@ async def attempt(url):
             final_domain = urlparse(final_url).netloc
 
             if final_domain != original_domain and final_url != url:
-                return {"success": True, "url": final_url, "method": "redirect_follow"}
+                logger.info(f"[Layer1] Redirect found: {final_url}")
+                return final_url
 
-            # Check for meta refresh or JS redirect in HTML
             if resp.status_code == 200:
                 text = resp.text[:10000]
 
-                # Meta refresh
                 meta = re.search(r'<meta[^>]*http-equiv=["\']refresh["\'][^>]*content=["\'][^;]*;url=([^"\']+)["\']', text, re.I)
                 if meta:
-                    return {"success": True, "url": meta.group(1).strip(), "method": "meta_refresh"}
+                    found = meta.group(1).strip()
+                    if found.startswith("http"):
+                        return found
 
-                # JS redirect patterns
                 js_patterns = [
                     r'window\.location\.href\s*=\s*["\']([^"\']+)["\']',
                     r'window\.location\.replace\s*\(\s*["\']([^"\']+)["\']',
@@ -44,8 +48,9 @@ async def attempt(url):
                     if m:
                         found_url = m.group(1)
                         if found_url.startswith('http') and found_url != url:
-                            return {"success": True, "url": found_url, "method": "js_redirect"}
+                            return found_url
 
-        return {"success": False, "url": None, "method": None}
-    except Exception:
-        return {"success": False, "url": None, "method": None}
+        return None
+    except Exception as e:
+        logger.debug(f"[Layer1] Error: {e}")
+        return None
