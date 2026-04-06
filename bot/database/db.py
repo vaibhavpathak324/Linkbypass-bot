@@ -28,7 +28,7 @@ async def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
         original_url TEXT, shortener TEXT, destination_url TEXT,
         final_url TEXT, method TEXT, time_taken REAL,
-        created_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
+        created_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS shorteners (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
@@ -41,7 +41,7 @@ async def init_db():
     CREATE TABLE IF NOT EXISTS force_sub_channels (
         id INTEGER PRIMARY KEY AUTOINCREMENT, channel_username TEXT UNIQUE NOT NULL,
         channel_id INTEGER NULL, is_active INTEGER DEFAULT 1,
-        added_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
+        added_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS analytics_daily (
         id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE UNIQUE NOT NULL,
@@ -61,7 +61,7 @@ async def init_db():
         message_type TEXT DEFAULT 'text', media_file_id TEXT NULL,
         total_target INTEGER DEFAULT 0, sent_count INTEGER DEFAULT 0,
         failed_count INTEGER DEFAULT 0, status TEXT DEFAULT 'pending',
-        created_at TIMESTAMP DEQAU1T CUSRENT_TIMESTAMP
+        created_at TIMESTAMP DEFASLT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL, description TEXT NULL,
