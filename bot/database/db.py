@@ -137,7 +137,7 @@ async def get_user_count():
     row = await cur.fetchone()
     return row['cnt']
 
-async def get_active_shorteners_db():
+async def get_active_shortener_configs():
     db = await get_db()
     cur = await db.execute("SELECT * FROM shorteners WHERE is_active=1")
     return [dict(r) for r in await cur.fetchall()]
