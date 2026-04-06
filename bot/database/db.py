@@ -45,7 +45,7 @@ async def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, date DATE UNIQUE NOT NULL,
         total_users INTEGER DEFAULT 0, new_users INTEGER DEFAULT 0,
         total_bypasses INTEGER DEFAULT 0, total_intercepted_links INTEGER DEFAULT 0,
-        premium_purchases INTEGER DEFAULT 0, signup_signoups INTEGER DEFAULT 0
+        premium_purchases INTEGER DEFAULT 0, signup_signups INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS supported_shorteners (
         id INTEGER PRIMARY KEY AUTOINCREMENT, domain TEXT UNIQUE NOT NULL,
@@ -114,7 +114,7 @@ async def get_or_create_user(user_id, username=None, full_name=None):
         user = await cur.fetchone()
     return dict(user)
 
-async def increment_daily_bypasses(user_id):
+async def increment_daily_bypass(user_id):
     db = await get_db()
     await db.execute("UPDATE users SET daily_bypasses=daily_bypasses+1, total_bypasses=total_bypasses+1 WHERE user_id=?", (user_id,))
     await db.commit()
