@@ -1,185 +1,257 @@
 """
-LinkBypass Pro — Layer 4: Browser-Based Scraping
-==================================================
-Uses cloudscraper to handle JavaScript challenges, Cloudflare
-protection, and other anti-bot measures. More sophisticated
-than simple HTTP requests but lighter than a full headless browser.
+LinkBypass Pro — Layer 4: Playwright Browser Bypass
+=====================================================
+Uses Playwright (real Chromium) to bypass Cloudflare and JS challenges.
+This is the most reliable bypass method for CF-protected shorteners.
 """
 
-import re
+import asyncio
 import logging
 import random
-import time
+import re
 from typing import Optional
+from urllib.parse import urlparse
 
-from bot.config import BROWSER_TIMEOUT, USER_AGENTS
-from bot.engine.url_utils import (
-    is_valid_url, get_domain, extract_meta_refresh,
-    extract_js_redirects, extract_form_action, extract_hidden_inputs,
-    extract_csrf_token, try_base64_decode
-)
+from bot.config import USER_AGENTS
+from bot.engine.url_utils import is_valid_url, get_domain, is_destination_url
 
 logger = logging.getLogger(__name__)
+
+# Playwright browser singleton
+_browser = None
+_browser_lock = asyncio.Lock()
+
+
+async def _get_browser():
+    """Get or create a Playwright browser instance (singleton)."""
+    global _browser
+    async with _browser_lock:
+        if _browser is None or not _browser.is_connected():
+            try:
+                from playwright.async_api import async_playwright
+                pw = await async_playwright().start()
+                _browser = await pw.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-extensions',
+                        '--disable-background-networking',
+                        '--disable-default-apps',
+                        '--disable-sync',
+                        '--no-first-run',
+                        '--single-process',
+                        '--disable-blink-features=AutomationControlled',
+                    ]
+                )
+                logger.info("[Layer4] Playwright browser launched")
+            except Exception as e:
+                logger.error(f"[Layer4] Failed to launch browser: {e}")
+                return None
+        return _browser
 
 
 async def attempt(url: str) -> Optional[str]:
     """
-    Attempt bypass using cloudscraper (handles Cloudflare, JS challenges).
-
-    This layer:
-    1. Creates a cloudscraper session that handles JS challenges
-    2. Fetches the page
-    3. Follows any redirects (cloudscraper handles Cloudflare challenges)
-    4. Extracts destination URLs from JS/HTML patterns
-    5. Handles form-based redirects
-
-    Returns destination URL or None.
+    Bypass a URL using Playwright headless browser.
+    Navigates to the URL, waits for CF/JS challenges to resolve,
+    handles timers/countdowns, and captures the final destination URL.
     """
-    logger.info(f"[Layer4] Starting cloudscraper bypass for: {url[:80]}")
+    logger.info(f"[Layer4] Playwright bypass for: {url[:80]}")
     original_domain = get_domain(url)
-
-    try:
-        import cloudscraper
-    except ImportError:
-        logger.warning("[Layer4] cloudscraper not installed, skipping")
+    browser = await _get_browser()
+    if not browser:
+        logger.warning("[Layer4] No browser available")
         return None
 
+    context = None
+    page = None
     try:
-        scraper = cloudscraper.create_scraper(
-            browser={
-                'browser': 'chrome',
-                'platform': 'windows',
-                'mobile': False,
-            },
-            delay=3,
+        context = await browser.new_context(
+            user_agent=random.choice(USER_AGENTS),
+            viewport={'width': 1366, 'height': 768},
+            locale='en-US',
+            timezone_id='America/New_York',
+            java_script_enabled=True,
+            bypass_csp=True,
+            extra_http_headers={
+                'Accept-Language': 'en-US,en;q=0.9',
+                'DNT': '1',
+            }
         )
-        scraper.headers.update({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer': random.choice([
-                'https://www.google.com/',
-                'https://t.me/',
-                'https://www.google.co.in/',
-            ]),
-        })
 
-        # Step 1: Initial GET
-        resp = scraper.get(url, allow_redirects=True, timeout=BROWSER_TIMEOUT)
-        final_url = str(resp.url)
-        status = resp.status_code
+        # Stealth patches
+        await context.add_init_script("""
+            // Override navigator properties to avoid detection
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            window.chrome = {runtime: {}};
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                Promise.resolve({state: Notification.permission}) :
+                originalQuery(parameters)
+            );
+        """)
 
-        logger.debug(f"[Layer4] Initial response: status={status}, final_url={final_url[:80]}")
+        page = await context.new_page()
+        
+        # Track navigation - capture all URLs we pass through
+        visited_urls = []
+        final_url = [url]
+        
+        def on_response(response):
+            resp_url = response.url
+            if response.status in (301, 302, 303, 307, 308):
+                loc = response.headers.get('location', '')
+                if loc:
+                    visited_urls.append(loc)
+        
+        page.on('response', on_response)
 
-        # Check if redirect happened
-        if final_url != url and get_domain(final_url) != original_domain:
-            if is_valid_url(final_url):
-                logger.info(f"[Layer4] Cloudscraper redirect found: {final_url[:80]}")
-                return final_url
-
-        if status != 200:
+        # Navigate with extended timeout for CF challenges
+        try:
+            response = await page.goto(url, wait_until='domcontentloaded', timeout=45000)
+        except Exception as e:
+            logger.warning(f"[Layer4] Navigation timeout/error: {e}")
+            # Even on timeout, check if we redirected
+            current = page.url
+            if get_domain(current) != original_domain and is_destination_url(current, original_domain):
+                return current
             return None
 
-        html = resp.text
+        # Wait for any CF challenge to complete (check for redirects)
+        await asyncio.sleep(2)
+        current_url = page.url
+        
+        # If already redirected to a different domain, we're done
+        if get_domain(current_url) != original_domain and is_destination_url(current_url, original_domain):
+            logger.info(f"[Layer4] Direct redirect to: {current_url}")
+            return current_url
 
-        # Step 2: Check for various URL extraction patterns
-        # Pattern: JavaScript variable assignments
-        js_patterns = [
-            r'var\s+url\s*=\s*["\']([^"\']+)["\']',
-            r'var\s+link\s*=\s*["\']([^"\']+)["\']',
-            r'var\s+redirect\s*=\s*["\']([^"\']+)["\']',
-            r'var\s+destination\s*=\s*["\']([^"\']+)["\']',
-            r'var\s+go_url\s*=\s*["\']([^"\']+)["\']',
-            r'var\s+target\s*=\s*["\']([^"\']+)["\']',
-            r'data-url\s*=\s*["\']([^"\']+)["\']',
-            r'data-href\s*=\s*["\']([^"\']+)["\']',
-            r'data-redirect\s*=\s*["\']([^"\']+)["\']',
+        # Wait for page to fully load after CF
+        try:
+            await page.wait_for_load_state('networkidle', timeout=15000)
+        except:
+            pass
+
+        current_url = page.url
+        if get_domain(current_url) != original_domain and is_destination_url(current_url, original_domain):
+            return current_url
+
+        # ---- Handle AdLinkFly-type pages with timers ----
+        page_content = await page.content()
+        
+        # Look for countdown timers and wait
+        countdown_match = re.search(r'(?:var\s+(?:count|timer|seconds|wait|time)\s*=\s*(\d+))', page_content)
+        wait_time = 8  # default
+        if countdown_match:
+            wait_time = min(int(countdown_match.group(1)), 15)
+        
+        # Check if there's a "get link" / "go" / "continue" / "click here" button
+        # Wait for timer first
+        await asyncio.sleep(wait_time)
+        
+        # Try clicking common bypass buttons
+        button_selectors = [
+            '#btn-main',           # AdLinkFly standard
+            '.get-link',           # Common class
+            '#getLink',            # Common ID
+            'a.btn-success',       # Bootstrap green button
+            '#go-link',
+            '.go-link',
+            'a[href*="go"]',
+            '#continue',
+            '.continue-btn',
+            'a.btn[href]',
+            '#download-link',
+            '.download-btn',
+            'button[type="submit"]',
+            '#verify_button',
+            '#verify_btn',
+            '#wpsafe-link a',
+            '.wpsafe-bottom a',
+            '#surl a',
+            'a.btn-primary',
         ]
-
-        for pat in js_patterns:
-            m = re.search(pat, html, re.IGNORECASE)
-            if m:
-                found = m.group(1)
-                if found.startswith('http') and get_domain(found) != original_domain:
-                    if is_valid_url(found):
-                        logger.info(f"[Layer4] JS variable URL found: {found[:80]}")
-                        return found
-
-        # Pattern: Common destination link selectors
-        link_patterns = [
-            r'href=["\']([^"\']*(?:mega|drive\.google|mediafire|dropbox|gofile|pixeldrain|krakenfiles|hubcloud|gdtot|filepress|terabox)[^"\']*)["\']',
-            r'href=["\']([^"\']+)["\'][^>]*(?:id|class)=["\'][^"\']*(?:download|bypass|destination|result|go|link|btn)[^"\']*["\']',
-            r'window\.open\(["\']([^"\']+)["\']',
-            r'onclick=["\'][^"\']*window\.location\s*=\s*["\']?([^"\';\s]+)',
-        ]
-
-        for pat in link_patterns:
-            m = re.search(pat, html, re.IGNORECASE)
-            if m:
-                found = m.group(1)
-                if found.startswith('http') and get_domain(found) != original_domain:
-                    if is_valid_url(found):
-                        logger.info(f"[Layer4] Link pattern URL found: {found[:80]}")
-                        return found
-
-        # Pattern: Base64 encoded URLs
-        b64_patterns = [
-            r'atob\(["\']([A-Za-z0-9+/=]+)["\']',
-            r'base64[,:\s]*["\']?([A-Za-z0-9+/=]{20,})',
-            r'decode\(["\']([A-Za-z0-9+/=]{20,})["\']',
-        ]
-
-        for pat in b64_patterns:
-            for m in re.finditer(pat, html):
-                decoded = try_base64_decode(m.group(1))
-                if decoded and get_domain(decoded) != original_domain:
-                    logger.info(f"[Layer4] Base64 decoded URL: {decoded[:80]}")
-                    return decoded
-
-        # Pattern: Meta refresh
-        meta_url = extract_meta_refresh(html)
-        if meta_url and get_domain(meta_url) != original_domain:
-            logger.info(f"[Layer4] Meta refresh URL: {meta_url[:80]}")
-            return meta_url
-
-        # Step 3: Try form submission if form exists
-        form_action = extract_form_action(html)
-        if form_action:
-            hidden_inputs = extract_hidden_inputs(html)
-            csrf = extract_csrf_token(html)
-            if csrf:
-                hidden_inputs['_token'] = csrf
-
-            # Construct absolute URL for form action
-            if not form_action.startswith('http'):
-                from urllib.parse import urljoin
-                form_action = urljoin(url, form_action)
-
+        
+        for selector in button_selectors:
             try:
-                form_resp = scraper.post(
-                    form_action,
-                    data=hidden_inputs,
-                    allow_redirects=True,
-                    timeout=BROWSER_TIMEOUT
-                )
-                form_final = str(form_resp.url)
-                if form_final != url and get_domain(form_final) != original_domain:
-                    if is_valid_url(form_final):
-                        logger.info(f"[Layer4] Form submission redirect: {form_final[:80]}")
-                        return form_final
+                elem = await page.query_selector(selector)
+                if elem and await elem.is_visible():
+                    # Check if button has a direct href
+                    href = await elem.get_attribute('href')
+                    if href and href.startswith('http') and get_domain(href) != original_domain:
+                        logger.info(f"[Layer4] Found link in button href: {href}")
+                        return href
+                    
+                    # Click the button
+                    await elem.click()
+                    await asyncio.sleep(3)
+                    
+                    current_url = page.url
+                    if get_domain(current_url) != original_domain and is_destination_url(current_url, original_domain):
+                        logger.info(f"[Layer4] After click redirect to: {current_url}")
+                        return current_url
+            except Exception:
+                continue
 
-                # Check form response for URLs
-                if form_resp.status_code == 200:
-                    form_html = form_resp.text
-                    js_urls = extract_js_redirects(form_html)
-                    for js_url in js_urls:
-                        if get_domain(js_url) != original_domain and is_valid_url(js_url):
-                            logger.info(f"[Layer4] Form response JS URL: {js_url[:80]}")
-                            return js_url
-            except Exception as e:
-                logger.debug(f"[Layer4] Form submission error: {e}")
+        # Try extracting URLs from page content after all interactions
+        page_content = await page.content()
+        
+        # Look for destination URLs in common patterns
+        dest_patterns = [
+            r'(?:var|let|const)\s+(?:url|link|dest|redirect|target)\s*=\s*["\'](https?://[^"\'>]+)',
+            r'window\.(?:location|open)\s*[=(]\s*["\'](https?://[^"\'>]+)',
+            r'href\s*=\s*["\'](https?://(?!(?:' + re.escape(original_domain) + r'))[^"\'>]+)',
+            r'<a[^>]+id=["\']*(?:real|download|dest|final|target)[^>]*href=["\'](https?://[^"\'>]+)',
+            r'data-(?:url|href|link)=["\'](https?://[^"\'>]+)',
+        ]
+        
+        for pattern in dest_patterns:
+            matches = re.findall(pattern, page_content, re.I)
+            for match in matches:
+                if is_valid_url(match) and get_domain(match) != original_domain:
+                    if is_destination_url(match, original_domain):
+                        logger.info(f"[Layer4] Found URL in content: {match}")
+                        return match
 
+        # Final check on current URL
+        current_url = page.url
+        if get_domain(current_url) != original_domain:
+            return current_url
+
+        # Check visited URLs from redirects
+        for visited in reversed(visited_urls):
+            if is_valid_url(visited) and get_domain(visited) != original_domain:
+                if is_destination_url(visited, original_domain):
+                    return visited
+
+        logger.info("[Layer4] No destination found")
         return None
 
     except Exception as e:
-        logger.debug(f"[Layer4] Error: {type(e).__name__}: {e}")
+        logger.error(f"[Layer4] Error: {e}")
         return None
+    finally:
+        try:
+            if page:
+                await page.close()
+            if context:
+                await context.close()
+        except:
+            pass
+
+
+async def cleanup():
+    """Close the browser on shutdown."""
+    global _browser
+    if _browser:
+        try:
+            await _browser.close()
+        except:
+            pass
+        _browser = None
