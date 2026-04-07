@@ -1,9 +1,12 @@
 """
-LinkBypass Pro — Layer 5: Playwright Headless Browser
-======================================================
-Uses a real Chromium browser via Playwright to bypass
-Cloudflare-protected shorteners. This is the most reliable
-but slowest method.
+LinkBypass Pro — Layer 5: Stealth Playwright Browser v4.0
+==========================================================
+Real Chromium browser with comprehensive anti-detection:
+- Playwright stealth patches (webdriver, plugins, languages, etc.)
+- CF managed challenge auto-wait & auto-solve
+- AdLinkFly flow automation (wait for timer, click buttons)
+- Network interception for destination URL detection
+- Intelligent content extraction from loaded page
 """
 
 import re
@@ -14,176 +17,231 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+BLOCKLIST_DOMAINS = {
+    'cloudflare.com', 'challenges.cloudflare.com', 'google.com',
+    'gstatic.com', 'googleapis.com', 'facebook.com', 'doubleclick.net',
+    'googlesyndication.com', 'cloudflareinsights.com', 'cdn.jsdelivr.net',
+    'jquery.com', 'bootstrapcdn.com', 'analytics.google.com',
+    'adservice.google.com', 'pagead2.googlesyndication.com',
+}
+
+STEALTH_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+Object.defineProperty(navigator, 'plugins', {get: () => {
+    return [
+        {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
+        {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+        {name: 'Native Client', filename: 'internal-nacl-plugin'},
+    ];
+}});
+
+window.chrome = {
+    runtime: {
+        PlatformOs: {MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd'},
+        PlatformArch: {ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64', MIPS: 'mips', MIPS64: 'mips64'},
+        PlatformNaclArch: {ARM: 'arm', X86_32: 'x86-32', X86_64: 'x86-64', MIPS: 'mips', MIPS64: 'mips64'},
+        RequestUpdateCheckStatus: {THROTTLED: 'throttled', NO_UPDATE: 'no_update', UPDATE_AVAILABLE: 'update_available'},
+        OnInstalledReason: {INSTALL: 'install', UPDATE: 'update', CHROME_UPDATE: 'chrome_update', SHARED_MODULE_UPDATE: 'shared_module_update'},
+        OnRestartRequiredReason: {APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic'},
+    },
+    loadTimes: function() { return {}; },
+    csi: function() { return {}; },
+    app: {isInstalled: false, InstallState: {INSTALLED: 'installed', NOT_INSTALLED: 'not_installed'}, RunningState: {RUNNING: 'running', CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run'}},
+};
+
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications' ?
+    Promise.resolve({state: Notification.permission}) :
+    originalQuery(parameters)
+);
+
+const getParameter = WebGLRenderingContext.prototype.getParameter;
+WebGLRenderingContext.prototype.getParameter = function(parameter) {
+    if (parameter === 37445) return 'Intel Inc.';
+    if (parameter === 37446) return 'Intel Iris OpenGL Engine';
+    return getParameter.call(this, parameter);
+};
+
+Object.defineProperty(navigator, 'connection', {get: () => ({
+    downlink: 10, effectiveType: '4g', onchange: null, rtt: 50, saveData: false
+})});
+
+Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 0});
+Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+"""
+
+
+def _is_dest(url: str, src_domain: str) -> bool:
+    if not url:
+        return False
+    try:
+        d = urlparse(url).netloc.lower().replace('www.', '')
+        return bool(d and d != src_domain and d not in BLOCKLIST_DOMAINS
+                     and not any(bl in d for bl in ['cloudflare', 'google-analytics', 'adsense']))
+    except Exception:
+        return False
+
 
 async def attempt(url: str) -> Optional[str]:
-    """Bypass using Playwright headless browser."""
-    logger.info(f"[Layer5] Starting Playwright bypass for: {url[:80]}")
-    
+    """Bypass using stealth Playwright browser."""
+    logger.info(f"[Layer5] Starting stealth Playwright for: {url[:80]}")
+
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         logger.warning("[Layer5] Playwright not installed")
         return None
 
-    original_domain = urlparse(url).netloc
+    original_domain = urlparse(url).netloc.lower().replace('www.', '')
     browser = None
-    
+    pw = None
+
     try:
         pw = await async_playwright().start()
         browser = await pw.chromium.launch(
             headless=True,
             args=[
-                '--no-sandbox',
-                '--disable-setuid-sandbox', 
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
+                '--no-sandbox', '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', '--disable-gpu',
                 '--single-process',
                 '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-site-isolation-trials',
+                '--window-size=1920,1080',
             ]
         )
-        
+
         context = await browser.new_context(
             user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             viewport={'width': 1920, 'height': 1080},
+            locale='en-US',
+            timezone_id='America/New_York',
+            color_scheme='light',
             java_script_enabled=True,
+            bypass_csp=True,
         )
-        
-        # Anti-detection
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-            window.chrome = {runtime: {}};
-        """)
-        
+
+        await context.add_init_script(STEALTH_SCRIPT)
+
         page = await context.new_page()
-        
-        # Track navigation
-        final_url = [url]
-        
+
+        destinations = []
+
         def on_response(response):
-            resp_url = response.url
-            resp_domain = urlparse(resp_url).netloc
-            if resp_domain != original_domain and not any(x in resp_domain for x in [
-                'google', 'facebook', 'cloudflare', 'gstatic', 'jsdelivr', 
-                'jquery', 'bootstrap', 'cdn', 'analytics', 'doubleclick',
-                'adsense', 'adservice', 'tracking'
-            ]):
-                final_url[0] = resp_url
-        
+            try:
+                resp_url = response.url
+                if _is_dest(resp_url, original_domain):
+                    destinations.append(resp_url)
+            except Exception:
+                pass
+
         page.on('response', on_response)
-        
+
         try:
-            # Navigate with generous timeout for CF challenge
             response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-            
-            # Wait for potential CF challenge to resolve
-            await page.wait_for_timeout(3000)
-            
-            # Check if page URL changed
+
+            for i in range(6):
+                await page.wait_for_timeout(2500)
+                current = page.url
+                if _is_dest(current, original_domain):
+                    logger.info(f"[Layer5] CF resolved -> {current}")
+                    return current
+
+                content = await page.content()
+                if 'cf-browser-verification' not in content and 'challenge-platform' not in content:
+                    break
+
             current = page.url
-            current_domain = urlparse(current).netloc
-            if current_domain != original_domain and current_domain:
-                logger.info(f"[Layer5] Navigated to: {current}")
-                await browser.close()
-                await pw.stop()
+            if _is_dest(current, original_domain):
                 return current
-            
-            # Wait for page to fully load
-            await page.wait_for_timeout(5000)
-            
-            # Try to find and click continue/bypass buttons
+
+            content = await page.content()
+
+            timer_match = re.search(r'var\s+(?:count|timer|countdown|seconds|wait)\s*=\s*(\d+)', content)
+            if timer_match:
+                wait_sec = min(int(timer_match.group(1)), 20)
+                logger.info(f"[Layer5] Waiting {wait_sec}s for timer...")
+                await page.wait_for_timeout(wait_sec * 1000 + 2000)
+
             button_selectors = [
-                'a.btn-primary', 'a.btn-success', 'a.btn',
+                '#btn-main', '#continue', '#bypass', '#get-link',
+                '.get-link', '#link-button', '.link-button',
+                'a.btn-primary', 'a.btn-success',
                 'button.btn-primary', 'button.btn-success',
-                '#btn-main', '#continue', '#bypass',
-                'a[href*="go"], a[href*="redirect"]',
-                '.link-button', '#link-button',
-                'a.get-link', '#get-link',
-                '[id*="continue"]', '[id*="bypass"]', '[id*="download"]',
-                '[class*="continue"]', '[class*="bypass"]', '[class*="download"]',
+                '[id*="continue"]', '[id*="bypass"]', '[id*="getlink"]',
+                '[class*="continue"]', '[class*="bypass"]', '[class*="getlink"]',
+                'a[href*="go"]', 'a[href*="redirect"]',
                 'input[type="submit"]', 'button[type="submit"]',
+                '.btn-main', '#btn-go', '.btn-go',
             ]
-            
+
             for selector in button_selectors:
                 try:
-                    elements = await page.query_selector_all(selector)
-                    for el in elements:
+                    els = await page.query_selector_all(selector)
+                    for el in els:
                         if await el.is_visible():
                             await el.click()
                             await page.wait_for_timeout(3000)
-                            
                             new_url = page.url
-                            new_domain = urlparse(new_url).netloc
-                            if new_domain != original_domain and new_domain:
-                                logger.info(f"[Layer5] Button click led to: {new_url}")
-                                await browser.close()
-                                await pw.stop()
+                            if _is_dest(new_url, original_domain):
                                 return new_url
                 except Exception:
                     continue
-            
-            # Try extracting destination from page content
+
             content = await page.content()
-            
-            # Look for destination URLs in the page
             patterns = [
-                r'window\.location(?:\.href)?\s*=\s*["\'](https?://[^"\'\']+)["\'\']',
-                r'<a[^>]+href=["\'](https?://[^"\'\'\s]+)["\'\'][^>]*(?:class|id)=["\'\'][^"\'\']*(?:btn|button|continue|redirect|go|visit|download)',
+                r'window\.location(?:\.href)?\s*=\s*["\'](https?://[^"\' ]+)["\']',
+                r'location\.replace\(["\'](https?://[^"\' ]+)["\']',
                 r'"(?:url|link|destination|redirect)"\s*:\s*"(https?://[^"]+)"',
-                r'var\s+(?:url|link|dest|redirect)\s*=\s*["\'](https?://[^"\'\']+)["\'\']',
-                r'data-(?:url|href)=["\'](https?://[^"\'\'\s]+)["\'\']',
+                r'var\s+(?:url|link|dest|redirect)\s*=\s*["\'](https?://[^"\' ]+)["\']',
+                r'data-(?:url|href)\s*=\s*["\'](https?://[^"\'\s]+)["\']',
+                r'<a[^>]+href=["\'](https?://[^"\'\s]+)["\'][^>]*(?:class|id)=["\'"][^"\']*(?:btn|button|continue|go|visit|download)',
             ]
-            
+
             for pat in patterns:
-                matches = re.findall(pat, content, re.IGNORECASE)
-                for match in matches:
-                    match_domain = urlparse(match).netloc
-                    if match_domain and match_domain != original_domain:
-                        if not any(x in match_domain for x in ['google', 'facebook', 'cloudflare', 'gstatic', 'cdn']):
-                            logger.info(f"[Layer5] Extracted from content: {match[:80]}")
-                            await browser.close()
-                            await pw.stop()
-                            return match
-            
-            # Wait longer and check for delayed redirects
-            for _ in range(6):  # Wait up to 30 more seconds
+                for m in re.finditer(pat, content, re.IGNORECASE):
+                    if _is_dest(m.group(1), original_domain):
+                        return m.group(1)
+
+            if destinations:
+                return destinations[-1]
+
+            for _ in range(4):
                 await page.wait_for_timeout(5000)
                 current = page.url
-                current_domain = urlparse(current).netloc
-                if current_domain != original_domain and current_domain:
-                    logger.info(f"[Layer5] Delayed redirect to: {current}")
-                    await browser.close()
-                    await pw.stop()
+                if _is_dest(current, original_domain):
                     return current
-                
-                # Try clicking any new buttons that appeared
-                for selector in button_selectors[:5]:
+
+                for selector in button_selectors[:8]:
                     try:
                         el = await page.query_selector(selector)
                         if el and await el.is_visible():
                             await el.click()
                             await page.wait_for_timeout(2000)
-                            new_url = page.url
-                            if urlparse(new_url).netloc != original_domain:
-                                await browser.close()
-                                await pw.stop()
-                                return new_url
+                            if _is_dest(page.url, original_domain):
+                                return page.url
                     except Exception:
                         continue
-        
+
+                if destinations:
+                    return destinations[-1]
+
         except Exception as e:
-            logger.warning(f"[Layer5] Navigation error: {e}")
-        
-        await browser.close()
-        await pw.stop()
-        
+            logger.warning(f"[Layer5] Nav error: {e}")
+
     except Exception as e:
-        logger.error(f"[Layer5] Playwright error: {type(e).__name__}: {e}")
-        if browser:
-            try:
+        logger.error(f"[Layer5] Error: {type(e).__name__}: {e}")
+    finally:
+        try:
+            if browser:
                 await browser.close()
-            except Exception:
-                pass
-    
+            if pw:
+                await pw.stop()
+        except Exception:
+            pass
+
     return None
