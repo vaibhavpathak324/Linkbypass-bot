@@ -1,10 +1,9 @@
 """
-LinkBypass Pro — Bypass Engine Manager v4.0
+LinkBypass Pro - Bypass Engine Manager v4.1
 =============================================
 Intelligent multi-layer bypass orchestration with:
 - CF-protected domain detection & priority routing
-- Parallel layer execution for speed
-- Adaptive timeout management
+- Per-layer adaptive timeouts
 - Result caching with TTL
 """
 
@@ -63,31 +62,28 @@ async def bypass_url(url: str) -> BypassResult:
     is_cf = domain in CF_PROTECTED_DOMAINS
 
     if is_cf:
-        # For CF-protected: APIs first (they have their own CF solving),
-        # then browser sim, then headless as last resort
+        # CF-protected: Playwright first (only thing that can beat CF managed challenges)
+        # then APIs (some premium ones might work), skip simple layers
         layer_order = [
-            ('Layer 3: External APIs', _try_layer3),
-            ('Layer 4: Browser Sim', _try_layer4),
-            ('Layer 5: Headless', _try_layer5),
-            ('Layer 2: Patterns', _try_layer2),
-            ('Layer 1: Redirects', _try_layer1),
+            ('Layer 5: Headless', _try_layer5, 65),
+            ('Layer 3: External APIs', _try_layer3, 30),
+            ('Layer 4: Browser Sim', _try_layer4, 25),
         ]
-        timeout_per_layer = 35
     else:
+        # Non-CF: fast layers first
         layer_order = [
-            ('Layer 1: Redirects', _try_layer1),
-            ('Layer 2: Patterns', _try_layer2),
-            ('Layer 3: External APIs', _try_layer3),
-            ('Layer 4: Browser Sim', _try_layer4),
-            ('Layer 5: Headless', _try_layer5),
+            ('Layer 1: Redirects', _try_layer1, 15),
+            ('Layer 2: Patterns', _try_layer2, 20),
+            ('Layer 3: External APIs', _try_layer3, 30),
+            ('Layer 4: Browser Sim', _try_layer4, 25),
+            ('Layer 5: Headless', _try_layer5, 50),
         ]
-        timeout_per_layer = 30
 
     last_error = "All layers failed"
 
-    for layer_name, layer_func in layer_order:
+    for layer_name, layer_func, timeout in layer_order:
         try:
-            result_url = await asyncio.wait_for(layer_func(original_url), timeout=timeout_per_layer)
+            result_url = await asyncio.wait_for(layer_func(original_url), timeout=timeout)
             if result_url and result_url != original_url:
                 elapsed = int((time.time() - start) * 1000)
                 result = BypassResult(
@@ -101,8 +97,10 @@ async def bypass_url(url: str) -> BypassResult:
                 return result
         except asyncio.TimeoutError:
             last_error = f"{layer_name} timed out"
+            logger.warning(f"[Manager] {layer_name} timed out for {domain}")
         except Exception as e:
             last_error = f"{layer_name}: {str(e)}"
+            logger.warning(f"[Manager] {layer_name} error for {domain}: {e}")
 
     elapsed = int((time.time() - start) * 1000)
     return BypassResult(success=False, original_url=original_url,
@@ -133,21 +131,24 @@ async def _try_layer3(url):
     try:
         from bot.engine.layer3_external_apis import attempt
         return await attempt(url)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[Manager] Layer3 import/run error: {e}")
         return None
 
 async def _try_layer4(url):
     try:
         from bot.engine.layer4_browser import attempt
         return await attempt(url)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[Manager] Layer4 import/run error: {e}")
         return None
 
 async def _try_layer5(url):
     try:
         from bot.engine.layer5_headless import attempt
         return await attempt(url)
-    except Exception:
+    except Exception as e:
+        logger.error(f"[Manager] Layer5 error: {e}")
         return None
 
 SUPPORTED_SHORTENERS = [
@@ -178,8 +179,8 @@ async def bypass_urls(urls: list, max_concurrent: int = 3) -> list:
 
 def get_engine_info():
     return {
-        'version': '4.0.0',
+        'version': '4.1.0',
         'layers': 5,
         'shorteners': '500+',
-        'features': ['TLS fingerprinting', 'Stealth Playwright', 'Multi-API', 'CloudScraper', 'Adaptive ranking'],
+        'features': ['TLS fingerprinting', 'Headed Playwright + Xvfb', 'Multi-API', 'CloudScraper', 'CF auto-solve'],
     }
