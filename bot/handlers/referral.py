@@ -1,35 +1,51 @@
+"""
+LinkBypass Pro — Referral Handler
+"""
+import logging
 from aiogram import Router, Bot, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from bot.database.db import get_or_create_user, get_setting
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 @router.message(Command("referral"))
-async def cmd_referral(message: Message, bot: Bot):
-    user = await get_or_create_user(message.from_user.id, message.from_user)
-    me = await bot.get_me()
-    ref_code = user.get("referral_code", "")
-    ref_count = int(await get_setting("premium_referral_count") or "3")
-    ref_days = int(await get_setting("premium_referral_days") or "3")
-    total = user.get("total_referrals", 0)
-    progress = min(total, ref_count)
-    bar = "█" * progress + "░" * (ref_count - progress)
-    link = f"https://t.me/{me.username}?start=ref_{ref_code}"
-    text = f"👥 Get FREE Premium!\n\n🔗 Your link:\n{link}\n\n📊 {bar} {total}/{ref_count}\n\n🎁 Reward: {ref_days} days unlimited!"
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Share", switch_inline_query=f"Join LinkBypass Pro! {link}")],
-        [InlineKeyboardButton(text="🔙 Back", callback_data="back_start")]
-    ])
-    await message.answer(text, reply_markup=kb, disable_web_page_preview=True)
+async def cmd_referral(message: Message):
+    await _show_referral(message)
 
-@router.callback_query(F.data == "referral_menu")
-async def cb_referral(callback: CallbackQuery, bot: Bot):
+@router.callback_query(F.data == "show_referral")
+async def cb_referral(callback: CallbackQuery):
     user = await get_or_create_user(callback.from_user.id, callback.from_user)
-    me = await bot.get_me()
-    ref_code = user.get("referral_code", "")
-    ref_count = int(await get_setting("premium_referral_count") or "3")
-    total = user.get("total_referrals", 0)
-    link = f"https://t.me/{me.username}?start=ref_{ref_code}"
-    await callback.message.edit_text(f"👥 Referral\n\n🔗 {link}\n\n📊 {total}/{ref_count}", disable_web_page_preview=True)
+    me = await callback.bot.get_me()
+    ref_link = f"https://t.me/{me.username}?start=ref_{user['referral_code']}"
+    ref_count = int(await get_setting('premium_referral_count', '3'))
+    ref_days = int(await get_setting('premium_referral_days', '3'))
+    bonus = int(await get_setting('referral_bonus_credits', '5'))
+    text = (
+        f"👥 Referral Program\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 Your Stats:\n"
+        f"├── Referrals: {user['total_referrals']}\n"
+        f"├── Bonus Credits: {user['bonus_credits']}\n"
+        f"└── Code: {user['referral_code']}\n\n"
+        f"🎁 Rewards:\n"
+        f"• Each referral = +{bonus} bonus bypasses\n"
+        f"• {ref_count} referrals = {ref_days} days Premium!\n\n"
+        f"📎 Your Referral Link:\n{ref_link}"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Share Link", switch_inline_query=f"Join me on LinkBypass Pro! {ref_link}")],
+        [InlineKeyboardButton(text="🔙 Back", callback_data="back_start")],
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
     await callback.answer()
+
+async def _show_referral(message: Message):
+    user = await get_or_create_user(message.from_user.id, message.from_user)
+    me = await message.bot.get_me()
+    ref_link = f"https://t.me/{me.username}?start=ref_{user['referral_code']}"
+    await message.answer(
+        f"👥 Your Referral Link:\n{ref_link}\n\n"
+        f"Referrals: {user['total_referrals']} | Credits: {user['bonus_credits']}",
+        disable_web_page_preview=True
+    )

@@ -1,119 +1,165 @@
+"""
+LinkBypass Pro — Main Entry Point
+====================================
+Initializes the bot, registers all handlers, starts the
+web server for health checks, and runs the polling loop.
+"""
+
+import os
+import sys
 import asyncio
 import logging
+import signal
+from datetime import datetime, time as dt_time
+
 from aiohttp import web
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
 
-from bot.config import BOT_TOKEN, ADMIN_USER_ID, PORT
-from bot.database.db import init_db, get_db, reset_daily_bypasses, get_user_count
-from bot.engine.domain_list import KNOWN_SHORTENER_DOMAINS
+from bot.config import BOT_TOKEN, WEB_HOST, WEB_PORT, BOT_NAME, BOT_VERSION, logger
+from bot.database.db import get_db, close_db, reset_daily_bypasses, clean_expired_cache, get_user_count
+from bot.engine.domain_list import get_total_count
 
-from bot.handlers.start import router as start_router
-from bot.handlers.bypass import router as bypass_router
-from bot.handlers.help_cmd import router as help_router
-from bot.handlers.premium import router as premium_router
-from bot.handlers.referral import router as referral_router
-from bot.handlers.history import router as history_router
-from bot.handlers.batch import router as batch_router
-from bot.handlers.language import router as language_router
-from bot.handlers.check import router as check_router
-from bot.handlers.admin.panel import router as admin_router
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Web Server (Health Check for Render)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def health_handler(request):
-    count = await get_user_count()
-    return web.json_response({"status": "ok", "users": count, "shorteners": len(KNOWN_SHORTENER_DOMAINS)})
+    """Health check endpoint."""
+    try:
+        user_count = await get_user_count()
+    except Exception:
+        user_count = 0
 
-async def start_health_server():
+    return web.json_response({
+        "status": "ok",
+        "bot": BOT_NAME,
+        "version": BOT_VERSION,
+        "users": user_count,
+        "shorteners": get_total_count(),
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+
+
+async def root_handler(request):
+    """Root endpoint."""
+    return web.json_response({
+        "name": BOT_NAME,
+        "version": BOT_VERSION,
+        "status": "running",
+        "docs": "Send /start to the Telegram bot to get started.",
+    })
+
+
+async def start_web_server():
+    """Start the aiohttp web server for health checks."""
     app = web.Application()
-    app.router.add_get("/", health_handler)
-    app.router.add_get("/health", health_handler)
+    app.router.add_get('/health', health_handler)
+    app.router.add_get('/', root_handler)
+
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    site = web.TCPSite(runner, WEB_HOST, WEB_PORT)
     await site.start()
-    logger.info(f"Health server on port {PORT}")
+    logger.info(f"Web server started on {WEB_HOST}:{WEB_PORT}")
+    return runner
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Background Tasks
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def daily_reset_task():
+    """Reset daily bypass counters at midnight UTC."""
     while True:
-        await asyncio.sleep(86400)
+        now = datetime.utcnow()
+        tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if tomorrow <= now:
+            tomorrow = tomorrow.replace(day=tomorrow.day + 1)
+        wait_seconds = (tomorrow - now).total_seconds()
+
+        logger.info(f"Daily reset scheduled in {wait_seconds:.0f}s")
+        await asyncio.sleep(wait_seconds)
+
         try:
             await reset_daily_bypasses()
-            logger.info("Daily bypasses reset")
+            await clean_expired_cache()
+            logger.info("Daily reset completed: bypasses reset, cache cleaned")
         except Exception as e:
-            logger.error(f"Reset error: {e}")
+            logger.error(f"Daily reset error: {e}")
 
-async def premium_check_task(bot: Bot):
-    while True:
-        await asyncio.sleep(3600)
-        try:
-            db = await get_db()
-            cur = await db.execute("SELECT user_id FROM users WHERE is_premium=1 AND premium_until < datetime('now')")
-            expired = await cur.fetchall()
-            for row in expired:
-                uid = row[0]
-                await db.execute("UPDATE users SET is_premium=0 WHERE user_id=?", (uid,))
-                try:
-                    await bot.send_message(uid, "\u2b50 Your premium has expired. Renew: /premium")
-                except:
-                    pass
-            await db.commit()
-        except Exception as e:
-            logger.error(f"Premium check error: {e}")
 
-async def seed_shorteners():
-    db = await get_db()
-    for domain, name in KNOWN_SHORTENER_DOMAINS.items():
-        await db.execute(
-            "INSERT OR IGNORE INTO supported_shorteners (domain, name, bypass_method) VALUES (?, ?, 'auto')",
-            (domain, name))
-    await db.commit()
-    logger.info(f"Seeded {len(KNOWN_SHORTENER_DOMAINS)} shortener domains")
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Bot Setup
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def main():
-    await init_db()
-    await seed_shorteners()
+    """Main function — initializes and starts the bot."""
+    if not BOT_TOKEN:
+        logger.error("BOT_TOKEN not set! Set the BOT_TOKEN environment variable.")
+        sys.exit(1)
 
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
+    # Initialize database
+    await get_db()
+    logger.info("Database initialized")
 
-    dp.include_router(admin_router)
+    # Create bot and dispatcher
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=None)
+    )
+    dp = Dispatcher()
+
+    # Register all handlers
+    from bot.handlers.start import router as start_router
+    from bot.handlers.bypass import router as bypass_router
+    from bot.handlers.batch import router as batch_router
+    from bot.handlers.history import router as history_router
+    from bot.handlers.premium import router as premium_router
+    from bot.handlers.referral import router as referral_router
+    from bot.handlers.help_cmd import router as help_router
+    from bot.handlers.check import router as check_router
+    from bot.handlers.language import router as language_router
+    from bot.handlers.admin.panel import router as admin_router
+
+    dp.include_router(admin_router)    # Admin first (high priority)
     dp.include_router(start_router)
-    dp.include_router(help_router)
     dp.include_router(premium_router)
-    dp.include_router(referral_router)
-    dp.include_router(history_router)
-    dp.include_router(batch_router)
-    dp.include_router(language_router)
+    dp.include_router(help_router)
     dp.include_router(check_router)
-    dp.include_router(bypass_router)
+    dp.include_router(language_router)
+    dp.include_router(history_router)
+    dp.include_router(referral_router)
+    dp.include_router(batch_router)
+    dp.include_router(bypass_router)    # Bypass last (catch-all for URLs)
 
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Start the bot"),
-        BotCommand(command="help", description="How to use"),
-        BotCommand(command="batch", description="Bypass multiple links"),
-        BotCommand(command="history", description="Your bypass history"),
-        BotCommand(command="supported", description="Supported shorteners"),
-        BotCommand(command="premium", description="Get unlimited bypasses"),
-        BotCommand(command="referral", description="Invite friends"),
-        BotCommand(command="language", description="Change language"),
-        BotCommand(command="admin", description="Admin panel"),
-    ])
+    # Start web server
+    web_runner = await start_web_server()
 
-    await start_health_server()
-    asyncio.create_task(daily_reset_task())
-    asyncio.create_task(premium_check_task(bot))
+    # Start background tasks
+    reset_task = asyncio.create_task(daily_reset_task())
 
-    logger.info("LinkBypass Pro Bot started!")
+    logger.info(f"🚀 {BOT_NAME} v{BOT_VERSION} starting...")
+    logger.info(f"📊 {get_total_count()}+ shorteners supported")
+
     try:
-        await bot.send_message(ADMIN_USER_ID, "\ud83e\udd16 LinkBypass Pro Bot started!\n\nUse /admin to access the admin panel.")
-    except:
-        pass
+        # Delete webhook to ensure polling works
+        await bot.delete_webhook(drop_pending_updates=True)
 
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        # Start polling
+        await dp.start_polling(bot)
+    finally:
+        # Cleanup
+        reset_task.cancel()
+        await close_db()
+        await web_runner.cleanup()
+        logger.info("Bot stopped")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot shutdown requested")

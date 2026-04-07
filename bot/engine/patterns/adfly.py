@@ -1,46 +1,181 @@
-import httpx
+"""
+LinkBypass Pro — Ad.fly Bypass Pattern
+========================================
+Ad.fly uses a specific obfuscation technique where the destination
+URL is encoded in a JavaScript variable called 'ysmm'. The URL is
+decoded using a custom algorithm involving base64 and character swapping.
+"""
+
 import re
 import base64
+import logging
+from typing import Optional
 
-DOMAINS = ["adf.ly","j.gs","q.gs","ay.gy","atominik.com","tinyium.com","microify.com","pintient.com","babfrm.com"]
+import httpx
 
-async def bypass(url):
+from bot.config import PATTERN_TIMEOUT, USER_AGENTS
+from bot.engine.url_utils import is_valid_url, get_domain
+
+logger = logging.getLogger(__name__)
+
+
+def _decode_ysmm(encoded: str) -> Optional[str]:
+    """Decode the ysmm-encoded URL from Ad.fly."""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        async with httpx.AsyncClient(follow_redirects=False, timeout=15.0, headers=headers) as client:
-            resp = await client.get(url)
-            text = resp.text
+        # Step 1: Base64 decode
+        decoded_bytes = base64.b64decode(encoded)
+        decoded = decoded_bytes.decode('utf-8', errors='ignore')
 
-            # Method 1: Look for var url in script
-            match = re.search(r'var\s+yab\s*=\s*["\']([A-Za-z0-9+/=]+)["\']', text)
-            if match:
-                try:
-                    decoded = base64.b64decode(match.group(1)).decode('utf-8')
-                    if decoded.startswith('http'):
-                        return decoded
-                except:
-                    pass
+        # Step 2: Character swap (ad.fly's obfuscation)
+        # Split into two halves and interleave
+        half = len(decoded) // 2
+        part1 = decoded[:half]
+        part2 = decoded[half:]
 
-            # Method 2: Look for var url = "https:..."
-            match2 = re.search(r'var url\s*=\s*["\'](https?://[^"\']+)["\']', text)
-            if match2:
-                return match2.group(1)
+        # Reverse the interleaving
+        result = ""
+        for i in range(len(part1)):
+            result += part1[i]
+            if i < len(part2):
+                result += part2[i]
+        if len(part2) > len(part1):
+            result += part2[-1]
 
-            # Method 3: Check location header
-            if resp.status_code in (301, 302, 303, 307, 308):
-                loc = resp.headers.get('location', '')
-                if loc and loc != url:
-                    return loc
+        # Step 3: Remove trailing null bytes and clean
+        result = result.rstrip('\x00').strip()
 
-            # Method 4: Decode all base64 strings
-            for m in re.finditer(r'["\']([A-Za-z0-9+/=]{20,})["\']', text):
-                try:
-                    d = base64.b64decode(m.group(1)).decode('utf-8')
-                    if d.startswith('http'):
-                        return d
-                except:
-                    continue
+        # Step 4: The result should be a URL
+        if is_valid_url(result):
+            return result
 
-        return None
+        # Try alternative decode: simple base64
+        simple = base64.b64decode(encoded).decode('utf-8', errors='ignore')
+        if is_valid_url(simple):
+            return simple
+
+    except Exception as e:
+        logger.debug(f"[Adfly] ysmm decode error: {e}")
+
+    return None
+
+
+def _decode_ysmm_v2(encoded: str) -> Optional[str]:
+    """Alternative ysmm decoding for newer Ad.fly versions."""
+    try:
+        # Remove non-base64 characters
+        cleaned = re.sub(r'[^A-Za-z0-9+/=]', '', encoded)
+
+        # Add padding
+        padding = 4 - len(cleaned) % 4
+        if padding != 4:
+            cleaned += '=' * padding
+
+        decoded = base64.b64decode(cleaned).decode('utf-8', errors='ignore')
+
+        # Ad.fly v2: XOR with key
+        # The decoded string contains pairs of characters
+        # Even-index chars form one part, odd-index chars form another
+        even = decoded[0::2]
+        odd = decoded[1::2]
+
+        # Try both orderings
+        for combined in [even + odd, odd + even]:
+            if is_valid_url(combined):
+                return combined
+
+        # Try direct
+        if is_valid_url(decoded):
+            return decoded
+
     except Exception:
-        return None
+        pass
+
+    return None
+
+
+async def bypass(url: str) -> Optional[str]:
+    """Bypass an Ad.fly URL."""
+    logger.info(f"[Adfly] Bypassing: {url[:80]}")
+    domain = get_domain(url)
+
+    try:
+        import random
+        async with httpx.AsyncClient(
+            timeout=PATTERN_TIMEOUT,
+            follow_redirects=False,
+            verify=False
+        ) as client:
+            headers = {
+                'User-Agent': random.choice(USER_AGENTS),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.google.com/',
+            }
+
+            resp = await client.get(url, headers=headers)
+
+            # Follow initial redirect if any
+            if resp.status_code in (301, 302):
+                location = resp.headers.get('location', '')
+                if location:
+                    if get_domain(location) != domain and is_valid_url(location):
+                        return location
+                    resp = await client.get(location, headers=headers)
+
+            if resp.status_code != 200:
+                return None
+
+            html = resp.text
+
+            # Method 1: Extract ysmm variable
+            ysmm_match = re.search(r"var\s+ysmm\s*=\s*['\"]([^'\"]+)['\"]", html)
+            if ysmm_match:
+                encoded = ysmm_match.group(1)
+                logger.debug(f"[Adfly] Found ysmm: {encoded[:40]}...")
+
+                # Try both decode methods
+                result = _decode_ysmm(encoded)
+                if result:
+                    logger.info(f"[Adfly] ysmm v1 decode success: {result[:80]}")
+                    return result
+
+                result = _decode_ysmm_v2(encoded)
+                if result:
+                    logger.info(f"[Adfly] ysmm v2 decode success: {result[:80]}")
+                    return result
+
+            # Method 2: Extract from HTML directly
+            # Some ad.fly clones put the URL in a data attribute
+            data_url = re.search(r'data-url=["\']([^"\']+)["\']', html)
+            if data_url:
+                found = data_url.group(1)
+                if is_valid_url(found) and get_domain(found) != domain:
+                    return found
+
+            # Method 3: Look for the skip ad link
+            skip_patterns = [
+                r'<a[^>]*id=["\']skip["\'][^>]*href=["\']([^"\']+)["\']',
+                r'<a[^>]*class=["\'][^"\']*skip[^"\']*["\'][^>]*href=["\']([^"\']+)["\']',
+                r'<a[^>]*href=["\']([^"\']+)["\'][^>]*id=["\']skip["\']',
+            ]
+            for pat in skip_patterns:
+                m = re.search(pat, html, re.IGNORECASE)
+                if m:
+                    found = m.group(1)
+                    if is_valid_url(found) and get_domain(found) != domain:
+                        return found
+
+            # Method 4: Check for countdown URL in JS
+            countdown_url = re.search(
+                r'(?:countdown_url|getlink|skiplink|dest)\s*=\s*["\']([^"\']+)["\']',
+                html, re.IGNORECASE
+            )
+            if countdown_url:
+                found = countdown_url.group(1)
+                if is_valid_url(found) and get_domain(found) != domain:
+                    return found
+
+    except Exception as e:
+        logger.debug(f"[Adfly] Error: {e}")
+
+    return None

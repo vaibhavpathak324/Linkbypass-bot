@@ -1,12 +1,13 @@
 services:
   - type: web
-    name: bypass-pro-bot
+    name: Linkbypass-bot
     runtime: docker
     plan: free
+    autoDeploy: true
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_USER_ID
         sync: false
       - key: PORT
-        value: "10000"
+        value: 10000

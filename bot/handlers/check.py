@@ -1,18 +1,45 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
-from bot.engine.domain_list import KNOWN_SHORTENER_DOMAINS
+"""
+LinkBypass Pro — Check Handler
+"""
+from aiogram import Router
+from aiogram.types import Message
+from aiogram.filters import Command, CommandObject
+from bot.engine.url_utils import detect_shortener, is_valid_url, extract_urls, get_domain
+from bot.engine.domain_list import get_shortener_info
 
 router = Router()
 
-@router.message(Command("supported"))
-async def cmd_supported(message: Message):
-    count = len(KNOWN_SHORTENER_DOMAINS)
-    text = f"\U0001f310 Supported Shorteners ({count}+)\n\n\U0001f4cc Major: Linkvertise, ShrinkMe, GPLinks, OUO, AdFly, Exe.io\n\n\U0001f4cc Indian: VPLink, AroLinks, LinkShortify, EarnLink\n\n\U0001f4cc Total: {count}+ shorteners supported!\n\nSend any link to try! \U0001f513"
-    await message.answer(text)
-
-@router.callback_query(F.data == "supported")
-async def cb_supported(callback: CallbackQuery):
-    count = len(KNOWN_SHORTENER_DOMAINS)
-    await callback.message.edit_text(f"\U0001f310 Supported: {count}+ shorteners")
-    await callback.answer()
+@router.message(Command("check"))
+async def cmd_check(message: Message, command: CommandObject):
+    if not command.args:
+        await message.answer("Usage: /check <url>\nExample: /check https://shrinkme.io/XXXX")
+        return
+    url = command.args.strip()
+    urls = extract_urls(url)
+    if not urls:
+        if not url.startswith('http'):
+            url = 'https://' + url
+        urls = [url]
+    url = urls[0]
+    if not is_valid_url(url):
+        await message.answer("❌ Invalid URL.")
+        return
+    domain = get_domain(url)
+    info = get_shortener_info(domain)
+    name, category = detect_shortener(url)
+    if info:
+        await message.answer(
+            f"✅ Supported Shortener!\n\n"
+            f"🏷 Name: {info['name']}\n"
+            f"🌐 Domain: {domain}\n"
+            f"📂 Category: {info.get('category', 'general')}\n"
+            f"⚙️ Method: {info.get('method', 'auto')}\n"
+            f"📦 Module: {info.get('module', 'generic')}\n\n"
+            f"Send the link to bypass it!"
+        )
+    else:
+        await message.answer(
+            f"❓ Unknown Shortener\n\n"
+            f"🌐 Domain: {domain}\n\n"
+            f"This domain isn't in our database, but I'll still try to bypass it using generic methods. Send the link!"
+        )

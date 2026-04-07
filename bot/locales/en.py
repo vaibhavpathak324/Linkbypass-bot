@@ -1,12 +1,13 @@
-TEXTS = {
-    "welcome": "🔓 Welcome to LinkBypass Pro!\n\nI bypass 500+ link shorteners instantly!\n\nJust send me any shortened link! 🚀",
-    "bypass_processing": "🔓 Bypassing {shortener}...\n⏳ Please wait...",
-    "bypass_success": "✅ Link Bypassed Successfully!",
-    "bypass_fail": "❌ Could not bypass this link.",
-    "force_sub": "📢 Please join the following channels to use this bot:",
-    "limit_reached": "⚠️ Daily limit reached!",
-    "cooldown": "⏳ Please wait {seconds} seconds between bypasses.",
-    "not_shortener": "🤔 This doesn't appear to be a shortened link.",
-    "premium_info": "⭐ Premium — Unlimited bypasses + direct links!",
-    "help": "❓ Send any shortened link and I'll bypass it instantly!",
+"""English locale."""
+STRINGS = {
+    "welcome": "Welcome to LinkBypass Pro!",
+    "bypass_success": "Link bypassed successfully!",
+    "bypass_fail": "Failed to bypass the link.",
+    "daily_limit": "Daily limit reached.",
+    "premium_required": "Premium required.",
+    "cooldown": "Please wait before next bypass.",
+    "invalid_url": "Invalid URL.",
+    "no_url": "No URL found in message.",
+    "banned": "Your account is banned.",
+    "maintenance": "Bot is under maintenance.",
 }

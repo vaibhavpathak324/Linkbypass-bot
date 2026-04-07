@@ -1,138 +1,202 @@
-from aiogram import Router, Bot, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from bot.database.db import (get_or_create_user, get_setting, increment_daily_bypass,
-    save_bypass_history, update_shortener_stats)
-from bot.engine.manager import BypassManager
-from bot.engine.url_utils import extract_url, truncate
-from bot.injection.injector import link_injector
-from bot.services.force_sub_service import check_force_sub
+"""
+LinkBypass Pro — Bypass Handler
+=================================
+Handles incoming URLs from users and processes them
+through the bypass engine.
+"""
+
 import time
+import logging
+from aiogram import Router, Bot, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
+from bot.config import ADMIN_USER_ID
+from bot.database.db import (
+    get_or_create_user, get_setting, increment_daily_bypass,
+    save_bypass_history, is_user_premium, update_user
+)
+from bot.engine.manager import bypass_url, BypassResult
+from bot.engine.url_utils import (
+    extract_urls, is_valid_url, is_shortener_url,
+    detect_shortener, truncate, format_time_ms
+)
+from bot.injection.injector import link_injector
+
+logger = logging.getLogger(__name__)
 router = Router()
-bypass_manager = BypassManager()
-_cooldowns = {}
 
-def is_premium(user):
-    if user.get("is_premium"):
-        return True
-    return False
 
-@router.message(F.text & ~F.text.startswith("/"))
-async def handle_message(message: Message, bot: Bot):
-    url = extract_url(message.text)
-    if not url:
+@router.message(F.text.regexp(r'https?://'))
+async def handle_link(message: Message):
+    """Handle any message containing a URL."""
+    user = await get_or_create_user(message.from_user.id, message.from_user)
+
+    # Check if banned
+    if user.get('is_banned'):
+        await message.answer("❌ Your account has been banned. Contact admin for help.")
         return
 
-    user_id = message.from_user.id
-    user = await get_or_create_user(user_id, message.from_user)
-
-    if user.get("is_banned"):
+    # Check maintenance mode
+    maintenance = await get_setting('maintenance_mode', 'false')
+    if maintenance == 'true' and message.from_user.id != ADMIN_USER_ID:
+        msg = await get_setting('maintenance_message', 'Bot is under maintenance.')
+        await message.answer(f"🔧 {msg}")
         return
 
-    fsub = await check_force_sub(user_id, bot)
-    if not fsub["passed"]:
-        buttons = []
-        for ch in fsub["missing"]:
-            clean = ch.replace("@", "")
-            buttons.append([InlineKeyboardButton(text=f"\U0001f4e2 Join {ch}", url=f"https://t.me/{clean}")])
-        buttons.append([InlineKeyboardButton(text="\u2705 I've Joined \u2014 Verify", callback_data=f"verify_fsub:{url}")])
-        await message.reply("\U0001f4e2 Please join the following channels to use this bot:", 
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    # Extract URLs
+    urls = extract_urls(message.text)
+    if not urls:
+        await message.answer("❌ No valid URL found in your message.")
         return
 
-    prem = is_premium(user)
+    url = urls[0]  # Process first URL
 
-    if not prem:
-        daily_limit = int(await get_setting("free_daily_limit") or "5")
-        if user.get("daily_bypasses_used", 0) >= daily_limit:
-            stars_price = await get_setting("premium_stars_price") or "50"
-            ref_count = await get_setting("premium_referral_count") or "3"
-            await message.reply(
-                f"\u26a0\ufe0f Daily limit reached! ({user['daily_bypasses_used']}/{daily_limit})\n\n"
-                f"\u2b50 Get Premium ({stars_price} Stars) for unlimited bypasses!\n"
-                f"\U0001f465 Or invite {ref_count} friends for FREE premium!",
+    # Check daily limit
+    is_prem = await is_user_premium(message.from_user.id)
+    limit_key = 'premium_daily_limit' if is_prem else 'free_daily_limit'
+    daily_limit = int(await get_setting(limit_key, '15'))
+
+    if user['daily_bypasses_used'] >= daily_limit:
+        if not is_prem:
+            await message.answer(
+                f"⚠️ Daily limit reached ({daily_limit} bypasses)!\n\n"
+                f"⭐ Upgrade to Premium for unlimited bypasses:\n"
+                f"• /premium — See premium plans",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text=f"\u2b50 Get Premium", callback_data="buy_premium_stars")],
-                    [InlineKeyboardButton(text="\U0001f465 Invite Friends", callback_data="referral_menu")]
-                ]))
-            return
-
-        cooldown = int(await get_setting("cooldown_seconds") or "10")
-        now = time.time()
-        if user_id in _cooldowns and now - _cooldowns[user_id] < cooldown:
-            remaining = int(cooldown - (now - _cooldowns[user_id]))
-            await message.reply(f"\u23f3 Please wait {remaining} seconds between bypasses.")
-            return
-        _cooldowns[user_id] = now
-
-    clean_url = bypass_manager.clean_url(url)
-
-    if not bypass_manager.is_shortener_url(clean_url):
-        pass
-
-    shortener_name = bypass_manager.identify_shortener(clean_url)
-    if shortener_name == "Unknown":
-        shortener_name = "Unknown shortener"
-
-    processing_msg = await message.reply(f"\U0001f513 Bypassing {shortener_name}...\n\u23f3 Please wait...")
-
-    result = await bypass_manager.bypass(clean_url)
-
-    if not result.success:
-        await processing_msg.edit_text(
-            f"\u274c Could not bypass this link.\n\n"
-            f"\U0001f3f7\ufe0f Shortener: {shortener_name}\n"
-            f"\u2139\ufe0f {result.error}\n\n"
-            f"\U0001f4a1 Tip: Try again later or open in browser with an adblocker.")
+                    [InlineKeyboardButton(text="⭐ Get Premium", callback_data="show_premium")]
+                ])
+            )
+        else:
+            await message.answer(f"⚠️ Premium daily limit reached ({daily_limit}).")
         return
 
-    injection = await link_injector.inject(result.destination, prem)
+    # Check cooldown
+    cooldown = int(await get_setting('cooldown_seconds', '5'))
+    elapsed = time.time() - user.get('last_bypass', 0)
+    if elapsed < cooldown and message.from_user.id != ADMIN_USER_ID:
+        remaining = int(cooldown - elapsed)
+        await message.answer(f"⏳ Please wait {remaining}s before next bypass.")
+        return
 
-    await save_bypass_history(user_id, clean_url, shortener_name, result.destination,
-        injection["final_url"] if not injection["is_direct"] else None, result.method, result.time_ms)
-    await increment_daily_bypass(user_id)
+    # Detect shortener
+    shortener_name, category = detect_shortener(url)
 
-    link_to_show = injection["final_url"]
+    # Send processing message
+    status_msg = await message.answer(
+        f"🔄 Bypassing link...\n"
+        f"🔗 {truncate(url, 50)}\n"
+        f"🏷 Detected: {shortener_name}\n"
+        f"⏳ Processing..."
+    )
 
-    if prem:
-        await processing_msg.edit_text(
-            f"\u26a1 Link Bypassed Instantly!\n\n"
-            f"\U0001f517 Original: {truncate(clean_url, 40)}\n"
-            f"\U0001f3f7\ufe0f Shortener: {shortener_name}\n"
-            f"\u26a1 Speed: {result.time_ms}ms\n\n"
-            f"\U0001f4ce Direct destination:\n{result.destination}\n\n"
-            f"\u2b50 Premium \u2014 No ads, instant access!",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="\U0001f517 Open Link", url=result.destination)],
-                [InlineKeyboardButton(text="\U0001f4e4 Share Bot", callback_data="share_bot")]
-            ]),
-            disable_web_page_preview=True)
+    # Perform bypass
+    start = time.time()
+    result = await bypass_url(url)
+    elapsed_ms = (time.time() - start) * 1000
+
+    if result.success:
+        # Increment bypass counter
+        await increment_daily_bypass(message.from_user.id)
+
+        # Check for link injection (monetization)
+        final_url = result.destination_url
+        injected_url = None
+        shortener_used = None
+
+        inject_enabled = await get_setting('inject_links_enabled', 'false')
+        if inject_enabled == 'true' and not is_prem:
+            injection = await link_injector.inject(result.destination_url, is_prem)
+            if not injection['is_direct']:
+                final_url = injection['final_url']
+                injected_url = injection['final_url']
+                shortener_used = injection['shortener_used']
+
+        # Save to history
+        await save_bypass_history(
+            user_id=message.from_user.id,
+            original_url=url,
+            shortener=result.shortener,
+            destination_url=result.destination_url,
+            final_url=final_url,
+            method=result.method,
+            time_taken=result.time_taken_ms,
+            layer=result.layer,
+            success=True,
+            injected_url=injected_url,
+            shortener_used=shortener_used,
+        )
+
+        # Format success message
+        cache_badge = "⚡ " if result.cached else ""
+        text = (
+            f"✅ Link Bypassed Successfully!\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔗 Original: {truncate(url, 45)}\n"
+            f"🏷 Shortener: {result.shortener}\n"
+            f"⚙️ Method: {result.method} (Layer {result.layer})\n"
+            f"⏱ Time: {cache_badge}{format_time_ms(result.time_taken_ms)}\n\n"
+            f"🎯 Destination:\n{final_url}"
+        )
+
+        remaining = daily_limit - user['daily_bypasses_used'] - 1
+        if remaining <= 5 and not is_prem:
+            text += f"\n\n⚠️ {remaining} bypasses remaining today"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 Open Link", url=final_url)],
+        ])
+
+        await status_msg.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+
     else:
-        used = user.get("daily_bypasses_used", 0) + 1
-        daily_limit = int(await get_setting("free_daily_limit") or "5")
-        note = "\n\U0001f4a1 Opens in browser \u2192 wait a few seconds \u2192 destination loads!" if not injection["is_direct"] else ""
+        # Save failed attempt
+        await save_bypass_history(
+            user_id=message.from_user.id,
+            original_url=url,
+            shortener=result.shortener,
+            destination_url="",
+            final_url="",
+            method=result.method,
+            time_taken=result.time_taken_ms,
+            success=False,
+            error_message=result.error,
+        )
 
-        await processing_msg.edit_text(
-            f"\u2705 Link Bypassed Successfully!\n\n"
-            f"\U0001f517 Original: {truncate(clean_url, 40)}\n"
-            f"\U0001f3f7\ufe0f Shortener: {shortener_name}\n"
-            f"\u26a1 Speed: {result.time_ms}ms\n\n"
-            f"\U0001f4ce Your link:\n{link_to_show}\n{note}\n\n"
-            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
-            f"\U0001f4ca Today: {used}/{daily_limit}\n"
-            f"\u2b50 Get Premium for instant direct links!",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="\U0001f517 Open Link", url=link_to_show)],
-                [InlineKeyboardButton(text="\u2b50 Premium", callback_data="premium_menu"),
-                 InlineKeyboardButton(text="\U0001f465 Free via Referral", callback_data="referral_menu")],
-            ]),
-            disable_web_page_preview=True)
+        text = (
+            f"❌ Bypass Failed\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔗 URL: {truncate(url, 45)}\n"
+            f"🏷 Shortener: {result.shortener}\n"
+            f"⏱ Tried for: {format_time_ms(result.time_taken_ms)}\n\n"
+            f"💡 This shortener may have anti-bot protection.\n"
+            f"Try again later or send a different link."
+        )
 
-@router.callback_query(F.data.startswith("verify_fsub:"))
-async def verify_fsub(callback: CallbackQuery, bot: Bot):
-    url = callback.data.split(":", 1)[1]
-    fsub = await check_force_sub(callback.from_user.id, bot)
-    if fsub["passed"]:
-        await callback.message.edit_text("\u2705 Verified! Send the link again to bypass it.")
-    else:
-        await callback.answer("\u274c You haven't joined all channels yet.", show_alert=True)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Retry", callback_data=f"retry_{url[:50]}"),
+             InlineKeyboardButton(text="🔙 Menu", callback_data="back_start")]
+        ])
+
+        await status_msg.edit_text(text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "help_bypass")
+async def help_bypass(callback: CallbackQuery):
+    """Show bypass help."""
+    text = (
+        "🔓 How to Bypass Links\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Simply send me any shortened URL and I'll extract\n"
+        "the real destination link.\n\n"
+        "📌 Examples:\n"
+        "• https://shrinkme.io/XXXX\n"
+        "• https://gplinks.co/XXXX\n"
+        "• https://ouo.io/XXXX\n"
+        "• https://bit.ly/XXXX\n\n"
+        "🔗 Just paste the link and hit send!"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Back", callback_data="back_start")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()

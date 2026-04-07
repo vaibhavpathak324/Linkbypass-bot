@@ -1,30 +1,57 @@
+"""
+LinkBypass Pro — ShareUs.io Bypass Pattern
+============================================
+ShareUs is AdLinkFly-based with some custom modifications.
+Uses token extraction and form POST similar to AdLinkFly.
+"""
+
+import re
+import json
 import logging
-import requests
+from typing import Optional
+
+import httpx
+
+from bot.engine.patterns.adlinkfly import bypass as adlinkfly_bypass
+from bot.engine.url_utils import is_valid_url, get_domain
 
 logger = logging.getLogger(__name__)
 
-DOMAINS = [
-    "shareus.in", "shareus.io", "shrs.link"
-]
 
-async def bypass(url):
-    try:
-        import asyncio
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, _shareus_sync, url)
+async def bypass(url: str) -> Optional[str]:
+    """Bypass a ShareUs URL."""
+    logger.info(f"[ShareUs] Bypassing: {url[:80]}")
+
+    # ShareUs is AdLinkFly-based
+    result = await adlinkfly_bypass(url)
+    if result:
         return result
-    except Exception as e:
-        logger.warning(f"[ShareUs] Error: {e}")
-        return None
 
-def _shareus_sync(url):
-    headers = {"user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
-    DOMAIN = "https://us-central1-my-apps-server.cloudfunctions.net"
-    sess = requests.session()
-    code = url.split("/")[-1]
-    params = {"shortid": code, "initial": "true", "referrer": "https://shareus.io/"}
-    requests.get(f"{DOMAIN}/v", params=params, headers=headers, timeout=15)
-    for i in range(1, 4):
-        sess.post(f"{DOMAIN}/v", headers=headers, json={"current_page": i}, timeout=15)
-    response = sess.get(f"{DOMAIN}/get_link", headers=headers, timeout=15).json()
-    return response.get("link_info", {}).get("destination")
+    # ShareUs-specific: Try the API endpoint
+    try:
+        domain = get_domain(url)
+        async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            # Extract the alias
+            path = url.rstrip('/').split('/')[-1]
+
+            # Try shareus-specific go endpoint
+            resp = await client.post(
+                f"https://{domain}/links/go",
+                data={'alias': path, '_token': ''},
+                headers={
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Referer': url,
+                }
+            )
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                    dest = data.get('url') or data.get('destination')
+                    if dest and is_valid_url(str(dest)):
+                        return str(dest)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.debug(f"[ShareUs] API error: {e}")
+
+    return None
