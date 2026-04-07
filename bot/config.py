@@ -85,5 +85,5 @@ DEFAULT_REFERRAL_COUNT = 3
 DEFAULT_REFERRAL_DAYS = 3
 
 # ── Version ────────────────────────────────────────────────
-BOT_VERSION = "3.1.0"
+BOT_VERSION = "4.0.0"
 BOT_NAME = "LinkBypass Pro"
