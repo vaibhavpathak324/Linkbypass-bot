@@ -1,163 +1,158 @@
 """
-LinkBypass Pro — Bypass Engine Manager v3.1
-============================================
-6-layer bypass orchestrator with intelligent routing.
-CF-aware routing for Cloudflare-protected domains.
+LinkBypass Pro - Bypass Engine Manager v3.1
 """
 
+import asyncio
 import time
 import logging
-import asyncio
+from dataclasses import dataclass
 from typing import Optional
-from dataclasses import dataclass, field
-
-from bot.config import GLOBAL_BYPASS_TIMEOUT
-from bot.engine.url_utils import (
-    is_valid_url, get_domain, detect_shortener,
-    is_shortener_url, normalize_url, is_destination_url
-)
-from bot.engine.domain_list import get_shortener_info, get_total_count
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-CF_PROTECTED_DOMAINS = {
-    "lksfy.com", "linkvertise.com", "link1s.com", "shrinkme.io",
-    "shrinkforearn.in", "indianshortner.com", "easysky.in",
-    "tnlink.in", "xpshort.com", "dulink.in", "atglinks.com",
-    "ez4short.com", "adrinolinks.in", "mdiskshortner.link",
-    "shortingly.click", "mplaylink.com", "urlsopen.net",
-}
-
-# Layer name -> layer number
-LAYER_NUMBERS = {
-    "Layer1_Redirect": 1,
-    "Layer2_Patterns": 2,
-    "Layer3_APIs": 3,
-    "Layer4_Cloudscraper": 4,
-    "Layer5_Headless": 5,
-    "cache": 0,
-}
-
-
 @dataclass
 class BypassResult:
-    success: bool
+    success: bool = False
+    original_url: str = ""
     destination_url: Optional[str] = None
-    shortener: Optional[str] = None
-    method: Optional[str] = None
-    time_taken_ms: float = 0.0
-    layer: int = 0
+    time_taken_ms: int = 0
+    layer: str = ""
+    method: str = ""
     cached: bool = False
     error: Optional[str] = None
 
-    # Aliases for backward compatibility
-    @property
-    def url(self):
-        return self.destination_url
+CF_PROTECTED_DOMAINS = {
+    'lksfy.com', 'shrinkme.io', 'shrinke.me',
+    'ouo.io', 'ouo.press', 'za.gl', 'za.uy',
+    'exe.io', 'exey.io', 'fc.lc', 'fc-lc.com',
+    'gplinks.co', 'gplinks.in',
+    'shrinkforearn.in', 'shrinkearn.com',
+    'adshrink.it', 'clicksfly.com',
+}
 
+_cache = {}
+CACHE_TTL = 3600
 
-# Module-level cache and stats
-_cache: dict = {}
-_stats = {"total": 0, "success": 0, "by_layer": {}}
-
-
-async def _run_layer1(url: str) -> Optional[str]:
-    from bot.engine.layer1_redirect import attempt
-    return await attempt(url)
-
-async def _run_layer2(url: str) -> Optional[str]:
-    from bot.engine.layer2_patterns import attempt
-    return await attempt(url)
-
-async def _run_layer3(url: str) -> Optional[str]:
-    from bot.engine.layer3_external_apis import attempt
-    return await attempt(url)
-
-async def _run_layer4(url: str) -> Optional[str]:
-    from bot.engine.layer4_browser import try_cloudscraper_bypass
-    return await try_cloudscraper_bypass(url)
-
-async def _run_layer5(url: str) -> Optional[str]:
-    from bot.engine.layer5_headless import attempt
-    return await attempt(url)
-
-
-async def bypass_url(url: str, timeout: int = None) -> BypassResult:
-    """Main entry point — try each layer in order until one succeeds."""
-    global _cache, _stats
-    timeout = timeout or GLOBAL_BYPASS_TIMEOUT
+async def bypass_url(url: str) -> BypassResult:
     start = time.time()
-    _stats["total"] += 1
-
-    url = normalize_url(url)
-    if not is_valid_url(url):
-        return BypassResult(False, error="Invalid URL")
-    if not is_shortener_url(url):
-        return BypassResult(False, error="Not a known shortener URL")
-
-    domain = get_domain(url)
-    shortener_info = detect_shortener(url)
-    if isinstance(shortener_info, tuple):
-        shortener = shortener_info[0]
-    else:
-        shortener = shortener_info or domain
-
-    # Cache hit
-    if url in _cache:
-        logger.info(f"Cache hit for {url}")
-        ms = (time.time() - start) * 1000
-        return BypassResult(True, _cache[url], shortener, "cache", ms, 0, True)
-
+    original_url = url.strip()
+    if original_url in _cache:
+        cached_result, cached_time = _cache[original_url]
+        if time.time() - cached_time < CACHE_TTL:
+            cached_result.cached = True
+            cached_result.time_taken_ms = int((time.time() - start) * 1000)
+            return cached_result
+    try:
+        domain = urlparse(original_url).netloc.lower().replace('www.', '')
+    except Exception:
+        domain = ''
     is_cf = domain in CF_PROTECTED_DOMAINS
-
     if is_cf:
-        layers = [
-            ("Layer3_APIs", _run_layer3),
-            ("Layer4_Cloudscraper", _run_layer4),
-            ("Layer5_Headless", _run_layer5),
-            ("Layer1_Redirect", _run_layer1),
-            ("Layer2_Patterns", _run_layer2),
+        layer_order = [
+            ('Layer 3: External APIs', _try_layer3),
+            ('Layer 4: Browser Sim', _try_layer4),
+            ('Layer 5: Headless', _try_layer5),
+            ('Layer 2: Patterns', _try_layer2),
+            ('Layer 1: Redirects', _try_layer1),
         ]
     else:
-        layers = [
-            ("Layer1_Redirect", _run_layer1),
-            ("Layer2_Patterns", _run_layer2),
-            ("Layer3_APIs", _run_layer3),
-            ("Layer4_Cloudscraper", _run_layer4),
-            ("Layer5_Headless", _run_layer5),
+        layer_order = [
+            ('Layer 1: Redirects', _try_layer1),
+            ('Layer 2: Patterns', _try_layer2),
+            ('Layer 3: External APIs', _try_layer3),
+            ('Layer 4: Browser Sim', _try_layer4),
+            ('Layer 5: Headless', _try_layer5),
         ]
-
-    elapsed = lambda: time.time() - start
-    for name, runner in layers:
-        remaining = timeout - elapsed()
-        if remaining <= 0:
-            break
+    last_error = "All layers failed"
+    for layer_name, layer_func in layer_order:
         try:
-            logger.info(f"[{shortener}] Trying {name} ({remaining:.1f}s left)")
-            result = await asyncio.wait_for(runner(url), timeout=min(remaining, 25))
-            if result and is_destination_url(result, url):
-                took_ms = elapsed() * 1000
-                logger.info(f"[{shortener}] {name} succeeded in {took_ms:.0f}ms -> {result}")
-                _cache[url] = result
-                _stats["success"] += 1
-                _stats["by_layer"][name] = _stats["by_layer"].get(name, 0) + 1
-                layer_num = LAYER_NUMBERS.get(name, 0)
-                return BypassResult(True, result, shortener, name, took_ms, layer_num, False)
+            result_url = await asyncio.wait_for(layer_func(original_url), timeout=30)
+            if result_url and result_url != original_url:
+                elapsed = int((time.time() - start) * 1000)
+                result = BypassResult(
+                    success=True, original_url=original_url,
+                    destination_url=result_url, time_taken_ms=elapsed,
+                    layer=layer_name, method=layer_name, cached=False
+                )
+                _cache[original_url] = (result, time.time())
+                logger.info(f"bypass ok {layer_name} {domain} {elapsed}ms")
+                return result
         except asyncio.TimeoutError:
-            logger.warning(f"[{shortener}] {name} timed out")
+            last_error = f"{layer_name} timed out"
         except Exception as e:
-            logger.warning(f"[{shortener}] {name} error: {e}")
+            last_error = f"{layer_name}: {str(e)}"
+    elapsed = int((time.time() - start) * 1000)
+    return BypassResult(success=False, original_url=original_url,
+        time_taken_ms=elapsed, layer="none", method="none", error=last_error)
 
-    return BypassResult(False, shortener=shortener, time_taken_ms=elapsed() * 1000,
-                        error="All layers failed")
+async def _try_layer1(url):
+    try:
+        from bot.engine.layer1_redirect import attempt
+        return await attempt(url)
+    except ImportError:
+        from bot.engine.layer1_redirect import follow_redirects
+        return await follow_redirects(url)
+    except Exception:
+        return None
 
+async def _try_layer2(url):
+    try:
+        from bot.engine.layer2_patterns import attempt
+        return await attempt(url)
+    except ImportError:
+        from bot.engine.layer2_patterns import try_pattern_bypass
+        return await try_pattern_bypass(url)
+    except Exception:
+        return None
 
-def get_stats() -> dict:
-    return {
-        "total": _stats["total"],
-        "success": _stats["success"],
-        "rate": f"{(_stats['success']/max(1,_stats['total']))*100:.1f}%",
-        "by_layer": _stats["by_layer"],
-        "cache_size": len(_cache),
-        "supported": get_total_count(),
-    }
+async def _try_layer3(url):
+    try:
+        from bot.engine.layer3_external_apis import attempt
+        return await attempt(url)
+    except Exception:
+        return None
+
+async def _try_layer4(url):
+    try:
+        from bot.engine.layer4_browser import attempt
+        return await attempt(url)
+    except Exception:
+        return None
+
+async def _try_layer5(url):
+    try:
+        from bot.engine.layer5_headless import attempt
+        return await attempt(url)
+    except Exception:
+        return None
+
+SUPPORTED_SHORTENERS = [
+    'bit.ly', 'tinyurl.com', 'is.gd', 'lksfy.com', 'shrinkme.io',
+    'ouo.io', 'exe.io', 'fc.lc', 'gplinks.co', 'clicksfly.com',
+    'linkvertise.com', 'droplink.co', 'mdisk.me',
+]
+
+def get_total_count():
+    return len(SUPPORTED_SHORTENERS)
+
+async def bypass_urls(urls: list, max_concurrent: int = 3) -> list:
+    """Bypass multiple URLs concurrently."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+    async def _bypass_with_semaphore(url):
+        async with semaphore:
+            return await bypass_url(url)
+    tasks = [_bypass_with_semaphore(url) for url in urls]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    final = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            final.append(BypassResult(success=False, original_url=urls[i],
+                error=str(result), method="error"))
+        else:
+            final.append(result)
+    return final
+
+def get_engine_info():
+    return {'layers': 5, 'supported_shorteners': get_total_count(),
+        'cf_protected_domains': len(CF_PROTECTED_DOMAINS), 'version': '3.1'}
