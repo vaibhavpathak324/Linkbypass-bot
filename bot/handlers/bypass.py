@@ -1,7 +1,7 @@
 """
 LinkBypass Pro — Bypass Handler
-=================================
-Handles incoming URLs from users and processes them
+====================================
+Handles incoming URLs from users and processes
 through the bypass engine.
 """
 
@@ -91,7 +91,17 @@ async def handle_link(message: Message):
 
     # Perform bypass
     start = time.time()
-    result = await bypass_url(url)
+    try:
+        result = await bypass_url(url)
+    except Exception as exc:
+        logger.error(f"bypass_url crashed: {exc}", exc_info=True)
+        await status_msg.edit_text(
+            f"❌ Bypass Error\n\n"
+            f"🔗 URL: {truncate(url, 45)}\n"
+            f"⚠️ Internal error: {str(exc)[:100]}\n\n"
+            f"Please try again later."
+        )
+        return
     elapsed_ms = (time.time() - start) * 1000
 
     if result.success:
@@ -188,7 +198,7 @@ async def help_bypass(callback: CallbackQuery):
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Simply send me any shortened URL and I'll extract\n"
         "the real destination link.\n\n"
-        "📌 Examples:\n"
+        "�L Examples:\n"
         "• https://shrinkme.io/XXXX\n"
         "• https://gplinks.co/XXXX\n"
         "• https://ouo.io/XXXX\n"
