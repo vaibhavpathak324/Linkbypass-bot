@@ -99,7 +99,7 @@ class BypassManager:
                 result = await asyncio.wait_for(runner(url), timeout=min(remaining, 25))
                 if result and is_destination_url(result, url):
                     took = elapsed()
-                    logger.info(f"[{shortener}] ✅ {name} succeeded in {took:.1f}s → {result}")
+                    logger.info(f"[{shortener}] {name} succeeded in {took:.1f}s -> {result}")
                     self._cache[url] = result
                     self._stats["success"] += 1
                     self._stats["by_layer"][name] = self._stats["by_layer"].get(name, 0) + 1
@@ -112,29 +112,29 @@ class BypassManager:
         return BypassResult(False, shortener=shortener, time_taken=elapsed(),
                             error="All layers failed")
 
-    # ── Layer runners ──────────────────────────────────────────
+    # Layer runners - use attempt() which is the standard function name
 
     async def _run_layer1(self, url: str) -> Optional[str]:
-        from bot.engine.layer1_redirect import follow_redirects
-        return await follow_redirects(url)
+        from bot.engine.layer1_redirect import attempt
+        return await attempt(url)
 
     async def _run_layer2(self, url: str) -> Optional[str]:
-        from bot.engine.layer2_patterns import try_pattern_bypass
-        return await try_pattern_bypass(url)
+        from bot.engine.layer2_patterns import attempt
+        return await attempt(url)
 
     async def _run_layer3(self, url: str) -> Optional[str]:
-        from bot.engine.layer3_external_apis import try_external_apis
-        return await try_external_apis(url)
+        from bot.engine.layer3_external_apis import attempt
+        return await attempt(url)
 
     async def _run_layer4(self, url: str) -> Optional[str]:
         from bot.engine.layer4_browser import try_cloudscraper_bypass
         return await try_cloudscraper_bypass(url)
 
     async def _run_layer5(self, url: str) -> Optional[str]:
-        from bot.engine.layer5_headless import try_headless_bypass
-        return await try_headless_bypass(url)
+        from bot.engine.layer5_headless import attempt
+        return await attempt(url)
 
-    # ── Stats ──────────────────────────────────────────────────
+    # Stats
 
     def get_stats(self) -> dict:
         return {
