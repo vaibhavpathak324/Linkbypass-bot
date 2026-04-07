@@ -1,1 +1,186 @@
-IiIiCkxpbmtCeXBhc3MgUHJvIOKAlCBCeXBhc3MgSGFuZGxlcgo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09CkhhbmRsZXMgL2J5cGFzcyBjb21tYW5kIGFuZCBkaXJlY3QgVVJMIG1lc3NhZ2VzLgpQcm9jZXNzZXMgVVJMcyB0aHJvdWdoIHRoZSBieXBhc3MgZW5naW5lIGFuZCByZXR1cm5zIHJlc3VsdHMuCiIiIgoKaW1wb3J0IHRpbWUKaW1wb3J0IGxvZ2dpbmcKaW1wb3J0IHJlCmZyb20gYWlvZ3JhbSBpbXBvcnQgUm91dGVyLCB0eXBlcwpmcm9tIGFpb2dyYW0uZmlsdGVycyBpbXBvcnQgQ29tbWFuZAoKZnJvbSBib3QuY29uZmlnIGltcG9ydCBBRE1JTl9VU0VSX0lECmZyb20gYm90LmRhdGFiYXNlIGltcG9ydCAoCiAgICBnZXRfdXNlciwgY3JlYXRlX3VzZXIsIGluY3JlbWVudF91c2FnZSwKICAgIGdldF9kYWlseV91c2FnZSwgaXNfcHJlbWl1bSwgc2F2ZV9ieXBhc3NfaGlzdG9yeSwKKQpmcm9tIGJvdC5lbmdpbmUubWFuYWdlciBpbXBvcnQgYnlwYXNzX3VybCwgYnlwYXNzX3VybHMsIGdldF9lbmdpbmVfaW5mbwpmcm9tIGJvdC51dGlscy51cmxfdXRpbHMgaW1wb3J0IGV4dHJhY3RfdXJscywgZGV0ZWN0X3Nob3J0ZW5lcgoKbG9nZ2VyID0gbG9nZ2luZy5nZXRMb2dnZXIoX19uYW1lX18pCnJvdXRlciA9IFJvdXRlcigpCgojIOKUgOKUgCBSYXRlIExpbWl0cyDigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJTigJQKRlJFRV9EQUlMWV9MSU1JVCA9IDE1ClBSRU1JVU1fREFJTFlfTElNSVQgPSA5OTkKCgphc3luYyBkZWYgY2hlY2tfYW5kX3ByZXBhcmVfdXNlcih1c2VyX2lkOiBpbnQsIHVzZXJuYW1lOiBzdHIgPSAiIikgLT4gdHVwbGU6CiAgICAiIiJDaGVjayB1c2VyIGV4aXN0cywgY3JlYXRlIGlmIG5lZWRlZCwgY2hlY2sgbGltaXRzLiIiIgogICAgdXNlciA9IGdldF91c2VyKHVzZXJfaWQpCiAgICBpZiBub3QgdXNlcjoKICAgICAgICBjcmVhdGVfdXNlcih1c2VyX2lkLCB1c2VybmFtZSkKICAgIAogICAgcHJlbWl1bSA9IGlzX3ByZW1pdW0odXNlcl9pZCkKICAgIGRhaWx5X2xpbWl0ID0gUFJFTUlVTV9EQUlMWV9MSU1JVCBpZiBwcmVtaXVtIGVsc2UgRlJFRV9EQUlMWV9MSU1JVAogICAgdXNhZ2UgPSBnZXRfZGFpbHlfdXNhZ2UodXNlcl9pZCkKICAgIHJlbWFpbmluZyA9IG1heChkYWlseV9saW1pdCAtIHVzYWdlLCAwKQogICAgCiAgICByZXR1cm4gcHJlbWl1bSwgZGFpbHlfbGltaXQsIHVzYWdlLCByZW1haW5pbmcKCgpkZWYgZm9ybWF0X3Jlc3VsdChyZXN1bHQsIHVybDogc3RyLCByZW1haW5pbmc6IGludCkgLT4gc3RyOgogICAgIiIiRm9ybWF0IGJ5cGFzcyByZXN1bHQgZm9yIFRlbGVncmFtIG1lc3NhZ2UuIiIiCiAgICBpZiByZXN1bHQuc3VjY2VzczoKICAgICAgICByZXR1cm4gKAogICAgICAgICAgICBmIuKcheKAiyAqQnlwYXNzIFN1Y2Nlc3NmdWwhKlxuXG4iCiAgICAgICAgICAgIGYi8J+UlyAqT3JpZ2luYWw6KiBge3VybH1gXG4iCiAgICAgICAgICAgIGYi8J+OryAqRGVzdGluYXRpb246KiBge3Jlc3VsdC5kZXN0aW5hdGlvbl91cmx9YFxuXG4iCiAgICAgICAgICAgIGYi8J+UjSAqU2hvcnRlbmVyOiogYHtyZXN1bHQuc2hvcnRlbmVyfWBcbiIKICAgICAgICAgICAgZiLigqHvuI8gKk1ldGhvZDoqIHtyZXN1bHQubWV0aG9kfVxuIgogICAgICAgICAgICBmIvCfj5cgKkxheWVyOioge3Jlc3VsdC5sYXllcn1cbiIKICAgICAgICAgICAgZiLij7HvuI8gKlRpbWU6KiB7cmVzdWx0LnRpbWVfdGFrZW5fbXN9bXNcbiIKICAgICAgICAgICAgZiJ7J/CfkqAnIENhY2hlZCcgaWYgcmVzdWx0LmNhY2hlZCBlbHNlICcnfVxuXG4iCiAgICAgICAgICAgIGYi8J+TiiAqUmVtYWluaW5nIHRvZGF5Oioge3JlbWFpbmluZ30iCiAgICAgICAgKQogICAgZWxzZToKICAgICAgICBlcnJvcl9tc2cgPSByZXN1bHQuZXJyb3Igb3IgIlVua25vd24gZXJyb3IiCiAgICAgICAgcmV0dXJuICgKICAgICAgICAgICAgZiLinoPCflLQgKkJ5cGFzcyBGYWlsZWQqXG5cbiIKICAgICAgICAgICAgZiLwn5SXIE9yaWdpbmFsOiBge3VybH1gXG4iCiAgICAgICAgICAgIGYi4p2MIEVycm9yOiB7ZXJyb3JfbXNnfVxuXG4iCiAgICAgICAgICAgIGYi8J+SoSBUaXA6IFRyeSBhZ2FpbiBvciBjaGVjayBpZiB0aGUgVVJMIGlzIHZhbGlkLiIKICAgICAgICApCgoKQHJvdXRlci5tZXNzYWdlKENvbW1hbmQoImJ5cGFzcyIpKQphc3luYyBkZWYgY21kX2J5cGFzcyhtZXNzYWdlOiB0eXBlcy5NZXNzYWdlKToKICAgICIiIi9ieXBhc3MgPHVybD4g4oCUIGJ5cGFzcyBhIHNob3J0ZW5lZCBsaW5rLiIiIgogICAgdXNlcl9pZCA9IG1lc3NhZ2UuZnJvbV91c2VyLmlkCiAgICB1c2VybmFtZSA9IG1lc3NhZ2UuZnJvbV91c2VyLnVzZXJuYW1lIG9yICIiCgogICAgIyBDaGVjayB1c2VyIGFuZCBsaW1pdHMKICAgIHByZW1pdW0sIGRhaWx5X2xpbWl0LCB1c2FnZSwgcmVtYWluaW5nID0gYXdhaXQgY2hlY2tfYW5kX3ByZXBhcmVfdXNlcih1c2VyX2lkLCB1c2VybmFtZSkKICAgIGlmIHJlbWFpbmluZyA8PSAwOgogICAgICAgIGF3YWl0IG1lc3NhZ2UuYW5zd2VyKCLinqAg4pyMIFlvdXIgYWNjb3VudCBoYXMgYmVlbiByYXRlLWxpbWl0ZWRcblxuVHJ5IGFnYWluIHRvbW9ycm93IG9yIHVwZ3JhZGUgdG8gUHJlbWl1bSB3aXRoIC9wcmVtaXVtIikKICAgICAgICByZXR1cm4KCiAgICAjIEV4dHJhY3QgVVJMIGZyb20gY29tbWFuZAogICAgYXJncyA9IG1lc3NhZ2UudGV4dC5zcGxpdChtYXhzcGxpdD0xKQogICAgaWYgbGVuKGFyZ3MpIDwgMjoKICAgICAgICBhd2FpdCBtZXNzYWdlLmFuc3dlcigiVXNhZ2U6IC9ieXBhc3MgPHVybD5cblxuRXhhbXBsZTogL2J5cGFzcyBodHRwczovL3Nocmlua21lLmlvL3Rlc3QiKQogICAgICAgIHJldHVybgoKICAgIHRleHQgPSBhcmdzWzFdLnN0cmlwKCkKICAgIHVybHMgPSBleHRyYWN0X3VybHModGV4dCkKICAgIGlmIG5vdCB1cmxzOgogICAgICAgICMgVHJ5IGFkZGluZyBodHRwcyBwcmVmaXgKICAgICAgICBpZiBub3QgdGV4dC5zdGFydHN3aXRoKCgnaHR0cDovLycsICdodHRwczovLycpKToKICAgICAgICAgICAgdGV4dCA9IGYnaHR0cHM6Ly97dGV4dH0nCiAgICAgICAgICAgIHVybHMgPSBleHRyYWN0X3VybHModGV4dCkKICAgIAogICAgaWYgbm90IHVybHM6CiAgICAgICAgYXdhaXQgbWVzc2FnZS5hbnN3ZXIoIuKdjCBObyB2YWxpZCBVUkwgZm91bmQuIFBsZWFzZSBzZW5kIGEgdmFsaWQgc2hvcnRlbmVkIGxpbmsuIikKICAgICAgICByZXR1cm4KCiAgICAjIFNpbmdsZSBVUkwgYnlwYXNzCiAgICBpZiBsZW4odXJscykgPT0gMToKICAgICAgICB1cmwgPSB1cmxzWzBdCiAgICAgICAgIyBEZXRlY3Qgc2hvcnRlbmVyCiAgICAgICAgc2hvcnRlbmVyX25hbWUsIGNhdGVnb3J5ID0gZGV0ZWN0X3Nob3J0ZW5lcih1cmwpCiAgICAgICAgaWYgc2hvcnRlbmVyX25hbWUgPT0gInVua25vd24iOgogICAgICAgICAgICBtc2cgPSBmIlVua25vd24gc2hvcnRlbmVyIGZvcjogYHt1cmx9YFxuXG5JJ2xsIHN0aWxsIHRyeSB0byBieXBhc3MgaXQhIgogICAgICAgIGVsc2U6CiAgICAgICAgICAgIG1zZyA9IGYiRGV0ZWN0ZWQgKnt7c2hvcnRlbmVyX25hbWV9fSogKHtjYXRlZ29yeX0pLiBCeXBhc3NpbmcuLi4iCiAgICAgICAgCiAgICAgICAgc3RhdHVzX21zZyA9IGF3YWl0IG1lc3NhZ2UuYW5zd2VyKGYi8J+Up+KAiyB7bXNnfSIpCiAgICAgICAgCiAgICAgICAgIyBSdW4gYnlwYXNzCiAgICAgICAgcmVzdWx0ID0gYXdhaXQgYnlwYXNzX3VybCh1cmwpCiAgICAgICAgCiAgICAgICAgIyBTYXZlIGhpc3RvcnkKICAgICAgICB0cnk6CiAgICAgICAgICAgIHNhdmVfYnlwYXNzX2hpc3RvcnkoCiAgICAgICAgICAgICAgICB1c2VyX2lkPXVzZXJfaWQsCiAgICAgICAgICAgICAgICBvcmlnaW5hbF91cmw9dXJsLAogICAgICAgICAgICAgICAgc2hvcnRlbmVyPXJlc3VsdC5zaG9ydGVuZXIgb3Igc2hvcnRlbmVyX25hbWUsCiAgICAgICAgICAgICAgICBkZXN0aW5hdGlvbl91cmw9cmVzdWx0LmRlc3RpbmF0aW9uX3VybCBvciAiIiwKICAgICAgICAgICAgICAgIGZpbmFsX3VybD1yZXN1bHQuZGVzdGluYXRpb25fdXJsIG9yICIiLAogICAgICAgICAgICAgICAgbWV0aG9kPXJlc3VsdC5tZXRob2QsCiAgICAgICAgICAgICAgICB0aW1lX3Rha2VuPXJlc3VsdC50aW1lX3Rha2VuX21zLAogICAgICAgICAgICAgICAgbGF5ZXI9cmVzdWx0LmxheWVyLAogICAgICAgICAgICAgICAgc3VjY2Vzcz1yZXN1bHQuc3VjY2VzcywKICAgICAgICAgICAgICAgIGluamVjdGVkX3VybD0iIiwKICAgICAgICAgICAgICAgIHNob3J0ZW5lcl91c2VkPXJlc3VsdC5zaG9ydGVuZXIgb3Igc2hvcnRlbmVyX25hbWUsCiAgICAgICAgICAgICkKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIGxvZ2dlci53YXJuaW5nKGYiRmFpbGVkIHRvIHNhdmUgaGlzdG9yeToge2V9IikKICAgICAgICAKICAgICAgICAjIFVwZGF0ZSB1c2FnZQogICAgICAgIGlmIHJlc3VsdC5zdWNjZXNzOgogICAgICAgICAgICBpbmNyZW1lbnRfdXNhZ2UodXNlcl9pZCkKICAgICAgICAgICAgcmVtYWluaW5nIC09IDEKICAgICAgICAKICAgICAgICAjIEVkaXQgc3RhdHVzIG1lc3NhZ2Ugd2l0aCByZXN1bHQKICAgICAgICByZXNwb25zZSA9IGZvcm1hdF9yZXN1bHQocmVzdWx0LCB1cmwsIHJlbWFpbmluZykKICAgICAgICB0cnk6CiAgICAgICAgICAgIGF3YWl0IHN0YXR1c19tc2cuZWRpdF90ZXh0KHJlc3BvbnNlLCBwYXJzZV9tb2RlPSJNYXJrZG93biIpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICAgICAgYXdhaXQgbWVzc2FnZS5hbnN3ZXIocmVzcG9uc2UpCiAgICBlbHNlOgogICAgICAgICMgTXVsdGlwbGUgVVJMcyDigJQgYmF0Y2gKICAgICAgICBiYXRjaF9saW1pdCA9IDI1IGlmIHByZW1pdW0gZWxzZSA1CiAgICAgICAgaWYgbGVuKHVybHMpID4gYmF0Y2hfbGltaXQ6CiAgICAgICAgICAgIHVybHMgPSB1cmxzWzpiYXRjaF9saW1pdF0KCiAgICAgICAgaWYgbGVuKHVybHMpID4gcmVtYWluaW5nOgogICAgICAgICAgICBhd2FpdCBtZXNzYWdlLmFuc3dlcigKICAgICAgICAgICAgICAgIGYi4pqg77iPIERhaWx5IGxpbWl0IHJlYWNoZWQuIFlvdSBoYXZlIHtyZW1haW5pbmd9IGJ5cGFzc2VzIGxlZnQgIgogICAgICAgICAgICAgICAgZiJidXQgc2VudCB7bGVuKHVybHMpfSBVUkxzLiBQcm9jZXNzaW5nIGZpcnN0IHtyZW1haW5pbmd9LiIKICAgICAgICAgICAgKQogICAgICAgICAgICB1cmxzID0gdXJsc1s6cmVtYWluaW5nXQoKICAgICAgICBzdGF0dXNfbXNnID0gYXdhaXQgbWVzc2FnZS5hbnN3ZXIoCiAgICAgICAgICAgIGYi8J+UhOKAiyBQcm9jZXNzaW5nIHtsZW4odXJscyl9IFVSTHMuLi4gUGxlYXNlIHdhaXQuIgogICAgICAgICkKCiAgICAgICAgcmVzdWx0cyA9IGF3YWl0IGJ5cGFzc191cmxzKHVybHMpCiAgICAgICAgCiAgICAgICAgIyBGb3JtYXQgYmF0Y2ggcmVzdWx0cwogICAgICAgIGxpbmVzID0gW2Yi8J+TiyAqQmF0Y2ggUmVzdWx0czogKHtsZW4ocmVzdWx0cyl9IFVSTHMpKlxuIl0KICAgICAgICBzdWNjZXNzX2NvdW50ID0gMAogICAgICAgIGZvciBpLCAodXJsLCByZXN1bHQpIGluIGVudW1lcmF0ZShyZXN1bHRzLCAxKToKICAgICAgICAgICAgaWYgcmVzdWx0LnN1Y2Nlc3M6CiAgICAgICAgICAgICAgICBzdWNjZXNzX2NvdW50ICs9IDEKICAgICAgICAgICAgICAgIGluY3JlbWVudF91c2FnZSh1c2VyX2lkKQogICAgICAgICAgICAgICAgcmVtYWluaW5nIC09IDEKICAgICAgICAgICAgICAgIGxpbmVzLmFwcGVuZChmIntpfS4g4pyFIGB7dXJsfWBcbiAgIOKGkiBge3Jlc3VsdC5kZXN0aW5hdGlvbl91cmx9YFxuIikKICAgICAgICAgICAgZWxzZToKICAgICAgICAgICAgICAgIGxpbmVzLmFwcGVuZChmIntpfS4g4p2MIGB7dXJsfWBcbiAgIOKGkiB7cmVzdWx0LmVycm9yIG9yICdGYWlsZWQnfVxuIikKICAgICAgICAgICAgCiAgICAgICAgICAgICMgU2F2ZSBlYWNoIHJlc3VsdAogICAgICAgICAgICB0cnk6CiAgICAgICAgICAgICAgICBzaG9ydGVuZXJfbmFtZSwgXyA9IGRldGVjdF9zaG9ydGVuZXIodXJsKQogICAgICAgICAgICAgICAgc2F2ZV9ieXBhc3NfaGlzdG9yeSgKICAgICAgICAgICAgICAgICAgICB1c2VyX2lkPXVzZXJfaWQsIG9yaWdpbmFsX3VybD11cmwsCiAgICAgICAgICAgICAgICAgICAgc2hvcnRlbmVyPXJlc3VsdC5zaG9ydGVuZXIgb3Igc2hvcnRlbmVyX25hbWUsCiAgICAgICAgICAgICAgICAgICAgZGVzdGluYXRpb25fdXJsPXJlc3VsdC5kZXN0aW5hdGlvbl91cmwgb3IgIiIsCiAgICAgICAgICAgICAgICAgICAgZmluYWxfdXJsPXJlc3VsdC5kZXN0aW5hdGlvbl91cmwgb3IgIiIsCiAgICAgICAgICAgICAgICAgICAgbWV0aG9kPXJlc3VsdC5tZXRob2QsCiAgICAgICAgICAgICAgICAgICAgdGltZV90YWtlbj1yZXN1bHQudGltZV90YWtlbl9tcywKICAgICAgICAgICAgICAgICAgICBsYXllcj1yZXN1bHQubGF5ZXIsCiAgICAgICAgICAgICAgICAgICAgc3VjY2Vzcz1yZXN1bHQuc3VjY2VzcywKICAgICAgICAgICAgICAgICAgICBpbmplY3RlZF91cmw9IiIsCiAgICAgICAgICAgICAgICAgICAgc2hvcnRlbmVyX3VzZWQ9cmVzdWx0LnNob3J0ZW5lciBvciBzaG9ydGVuZXJfbmFtZSwKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICAgICAgbG9nZ2VyLndhcm5pbmcoZiJGYWlsZWQgdG8gc2F2ZSBoaXN0b3J5OiB7ZX0iKQoKICAgICAgICBsaW5lcy5hcHBlbmQoZiJcbuKcoCB7c3VjY2Vzc19jb3VudH0ve2xlbihyZXN1bHRzKX0gc3VjY2Vzc2Z1bCB8IFJlbWFpbmluZzoge3JlbWFpbmluZ30iKQogICAgICAgIHJlc3BvbnNlID0gIlxuIi5qb2luKGxpbmVzKQogICAgICAgIHRyeToKICAgICAgICAgICAgYXdhaXQgc3RhdHVzX21zZy5lZGl0X3RleHQocmVzcG9uc2UsIHBhcnNlX21vZGU9Ik1hcmtkb3duIikKICAgICAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgICAgICBhd2FpdCBtZXNzYWdlLmFuc3dlcihyZXNwb25zZSkKCgpAcm91dGVyLm1lc3NhZ2UoKQphc3luYyBkZWYgaGFuZGxlX3VybF9tZXNzYWdlKG1lc3NhZ2U6IHR5cGVzLk1lc3NhZ2UpOgogICAgIiIiSGFuZGxlIGRpcmVjdCBVUkwgbWVzc2FnZXMgKHdpdGhvdXQgL2J5cGFzcyBjb21tYW5kKS4iIiIKICAgIGlmIG5vdCBtZXNzYWdlLnRleHQ6CiAgICAgICAgcmV0dXJuCgogICAgIyBPbmx5IHByb2Nlc3MgaWYgdGV4dCBsb29rcyBsaWtlIGEgVVJMCiAgICB0ZXh0ID0gbWVzc2FnZS50ZXh0LnN0cmlwKCkKICAgIGlmIG5vdCByZS5tYXRjaChyJ2h0dHBzPzovLycsIHRleHQpIGFuZCAnLicgbm90IGluIHRleHQ6CiAgICAgICAgcmV0dXJuCgogICAgdXJscyA9IGV4dHJhY3RfdXJscyh0ZXh0KQogICAgaWYgbm90IHVybHM6CiAgICAgICAgcmV0dXJuCiAgICAKICAgICMgRGVsZWdhdGUgdG8gYnlwYXNzIGhhbmRsZXIgKGZha2UgYSAvYnlwYXNzIGNvbW1hbmQpCiAgICBtZXNzYWdlLnRleHQgPSBmIi9ieXBhc3Mge3RleHR9IgogICAgYXdhaXQgY21kX2J5cGFzcyhtZXNzYWdlKQoKCkByb3V0ZXIubWVzc2FnZShDb21tYW5kKCJoZWxwIikpCmFzeW5jIGRlZiBjbWRfaGVscChtZXNzYWdlOiB0eXBlcy5NZXNzYWdlKToKICAgICIiIi9oZWxwIOKAlCBzaG93IHVzYWdlIGluc3RydWN0aW9ucy4iIiIKICAgIGluZm8gPSBnZXRfZW5naW5lX2luZm8oKQogICAgaGVscF90ZXh0ID0gKAogICAgICAgIGYi8J+UkyAqTGlua0J5cGFzcyBQcm8qIC0gSGVscFxuIgogICAgICAgIGYi4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSA4pSAXG5cbiIKICAgICAgICBmIipCeXBhc3MgYSBzaG9ydGVuZWQgVVJMIHRvIGdldCB0aGUgZGVzdGluYXRpb24gbGluay4qXG5cbiIKICAgICAgICBmIvCfk4sgRXhhbXBsZXM6XG4iCiAgICAgICAgZiLigKIgaHR0cHM6Ly9zaHJpbmttZS5pby9YWFhYXG4iCiAgICAgICAgZiLigKIgaHR0cHM6Ly9sa3NmeS5jb20vWFhYWFxuIgogICAgICAgIGYi4oCiIGh0dHBzOi8vZXhlLmlvL1hYWFhcblxuIgogICAgICAgIGYi8J+TjCAqQ29tbWFuZHM6KlxuIgogICAgICAgIGYiL2J5cGFzcyA8dXJsPiDigJQgQnlwYXNzIGEgc2hvcnRlbmVkIFVSTFxuIgogICAgICAgIGYiL3N0YXRzIOKAlCBZb3VyIHVzYWdlIHN0YXRpc3RpY3NcbiIKICAgICAgICBmIi9wcmVtaXVtIOKAlCBVcGdyYWRlIGluZm9cbiIKICAgICAgICBmIi9oZWxwIOKAlCBUaGlzIG1lc3NhZ2VcblxuIgogICAgICAgIGYi4oS577iPIFlvdSBjYW4gYWxzbyBqdXN0IHNlbmQgYSBVUkwgZGlyZWN0bHkhXG5cbiIKICAgICAgICBmIvCfk4ogU3VwcG9ydGVkIFNob3J0ZW5lcnM6ICp7aW5mby5nZXQoJ3Nob3J0ZW5lcnMnLCAnMjQzJyl9KypcbiIKICAgICAgICBmIvCfj5cgQnlwYXNzIExheWVyczogKntpbmZvLmdldCgnbGF5ZXJzJywgJzUnKX0qIgogICAgKQogICAgYXdhaXQgbWVzc2FnZS5hbnN3ZXIoaGVscF90ZXh0LCBwYXJzZV9tb2RlPSJNYXJrZG93biIpCg==
+"""
+LinkBypass Pro - Bypass Handler
+=================================
+Handles incoming URLs from users and processes them
+through the bypass engine.
+"""
+
+import time
+import logging
+from aiogram import Router, Bot, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+
+from bot.config import ADMIN_USER_ID
+from bot.database.db import (
+    get_or_create_user, get_setting, increment_daily_bypass,
+    save_bypass_history, is_user_premium, update_user
+)
+from bot.engine.manager import bypass_url, BypassResult
+from bot.engine.url_utils import (
+    extract_urls, is_valid_url, is_shortener_url,
+    detect_shortener, truncate, format_time_ms
+)
+from bot.injection.injector import link_injector
+
+logger = logging.getLogger(__name__)
+router = Router()
+
+
+@router.message(F.text.regexp(r'https?://'))
+async def handle_link(message: Message):
+    user = await get_or_create_user(message.from_user.id, message.from_user)
+
+    if user.get('is_banned'):
+        await message.answer("Your account has been banned. Contact admin for help.")
+        return
+
+    maintenance = await get_setting('maintenance_mode', 'false')
+    if maintenance == 'true' and message.from_user.id != ADMIN_USER_ID:
+        msg = await get_setting('maintenance_message', 'Bot is under maintenance.')
+        await message.answer(f"Maintenance: {msg}")
+        return
+
+    urls = extract_urls(message.text)
+    if not urls:
+        await message.answer("No valid URL found in your message.")
+        return
+
+    url = urls[0]
+
+    is_prem = await is_user_premium(message.from_user.id)
+    limit_key = 'premium_daily_limit' if is_prem else 'free_daily_limit'
+    daily_limit = int(await get_setting(limit_key, '15'))
+
+    if user['daily_bypasses_used'] >= daily_limit:
+        if not is_prem:
+            await message.answer(
+                f"Daily limit reached ({daily_limit} bypasses)!\n\n"
+                f"Upgrade to Premium: /premium",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="Get Premium", callback_data="show_premium")]
+                ])
+            )
+        else:
+            await message.answer(f"Premium daily limit reached ({daily_limit}).")
+        return
+
+    cooldown = int(await get_setting('cooldown_seconds', '5'))
+    elapsed = time.time() - user.get('last_bypass', 0)
+    if elapsed < cooldown and message.from_user.id != ADMIN_USER_ID:
+        remaining = int(cooldown - elapsed)
+        await message.answer(f"Please wait {remaining}s before next bypass.")
+        return
+
+    shortener_name, category = detect_shortener(url)
+
+    status_msg = await message.answer(
+        f"Bypassing link...\n"
+        f"Link: {truncate(url, 50)}\n"
+        f"Detected: {shortener_name}\n"
+        f"Processing..."
+    )
+
+    start = time.time()
+    result = await bypass_url(url)
+    elapsed_ms = (time.time() - start) * 1000
+
+    if result.success:
+        await increment_daily_bypass(message.from_user.id)
+
+        final_url = result.destination_url
+        injected_url = None
+        shortener_used = None
+
+        inject_enabled = await get_setting('inject_links_enabled', 'false')
+        if inject_enabled == 'true' and not is_prem:
+            injection = await link_injector.inject(result.destination_url, is_prem)
+            if not injection['is_direct']:
+                final_url = injection['final_url']
+                injected_url = injection['final_url']
+                shortener_used = injection['shortener_used']
+
+        await save_bypass_history(
+            user_id=message.from_user.id,
+            original_url=url,
+            shortener=result.shortener,
+            destination_url=result.destination_url,
+            final_url=final_url,
+            method=result.method,
+            time_taken=result.time_taken_ms,
+            layer=result.layer,
+            success=True,
+            injected_url=injected_url,
+            shortener_used=shortener_used,
+        )
+
+        cache_badge = "CACHED " if result.cached else ""
+        text = (
+            f"Link Bypassed Successfully!\n"
+            f"===========================\n\n"
+            f"Original: {truncate(url, 45)}\n"
+            f"Shortener: {result.shortener}\n"
+            f"Method: {result.method} (Layer {result.layer})\n"
+            f"Time: {cache_badge}{format_time_ms(result.time_taken_ms)}\n\n"
+            f"Destination:\n{final_url}"
+        )
+
+        remaining = daily_limit - user['daily_bypasses_used'] - 1
+        if remaining <= 5 and not is_prem:
+            text += f"\n\n{remaining} bypasses remaining today"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Open Link", url=final_url)],
+        ])
+
+        await status_msg.edit_text(text, reply_markup=kb, disable_web_page_preview=True)
+
+    else:
+        await save_bypass_history(
+            user_id=message.from_user.id,
+            original_url=url,
+            shortener=result.shortener,
+            destination_url="",
+            final_url="",
+            method=result.method,
+            time_taken=result.time_taken_ms,
+            success=False,
+            error_message=result.error,
+        )
+
+        text = (
+            f"Bypass Failed\n"
+            f"===========================\n\n"
+            f"URL: {truncate(url, 45)}\n"
+            f"Shortener: {result.shortener}\n"
+            f"Tried for: {format_time_ms(result.time_taken_ms)}\n\n"
+            f"This shortener may have anti-bot protection.\n"
+            f"Try again later or send a different link."
+        )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Retry", callback_data=f"retry_{url[:50]}"),
+             InlineKeyboardButton(text="Menu", callback_data="back_start")]
+        ])
+
+        await status_msg.edit_text(text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "help_bypass")
+async def help_bypass(callback: CallbackQuery):
+    text = (
+        "How to Bypass Links\n"
+        "===========================\n\n"
+        "Simply send me any shortened URL and I'll extract\n"
+        "the real destination link.\n\n"
+        "Examples:\n"
+        "https://shrinkme.io/XXXX\n"
+        "https://gplinks.co/XXXX\n"
+        "https://ouo.io/XXXX\n"
+        "https://bit.ly/XXXX\n\n"
+        "Just paste the link and hit send!"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Back", callback_data="back_start")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
