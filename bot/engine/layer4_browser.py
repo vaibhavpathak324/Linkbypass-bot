@@ -209,3 +209,6 @@ async def try_cloudscraper_bypass(url: str) -> Optional[str]:
 
     logger.info("[Layer4] All strategies failed")
     return None
+
+# Alias for manager.py import
+attempt = try_cloudscraper_bypass
