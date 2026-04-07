@@ -9,7 +9,7 @@ import time
 import logging
 import asyncio
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bot.config import GLOBAL_BYPASS_TIMEOUT
 from bot.engine.url_utils import (
@@ -28,15 +28,32 @@ CF_PROTECTED_DOMAINS = {
     "shortingly.click", "mplaylink.com", "urlsopen.net",
 }
 
+# Layer name -> layer number
+LAYER_NUMBERS = {
+    "Layer1_Redirect": 1,
+    "Layer2_Patterns": 2,
+    "Layer3_APIs": 3,
+    "Layer4_Cloudscraper": 4,
+    "Layer5_Headless": 5,
+    "cache": 0,
+}
+
 
 @dataclass
 class BypassResult:
     success: bool
-    url: Optional[str] = None
+    destination_url: Optional[str] = None
     shortener: Optional[str] = None
     method: Optional[str] = None
-    time_taken: float = 0.0
+    time_taken_ms: float = 0.0
+    layer: int = 0
+    cached: bool = False
     error: Optional[str] = None
+
+    # Aliases for backward compatibility
+    @property
+    def url(self):
+        return self.destination_url
 
 
 # Module-level cache and stats
@@ -79,16 +96,20 @@ async def bypass_url(url: str, timeout: int = None) -> BypassResult:
         return BypassResult(False, error="Not a known shortener URL")
 
     domain = get_domain(url)
-    shortener = detect_shortener(url)
+    shortener_info = detect_shortener(url)
+    if isinstance(shortener_info, tuple):
+        shortener = shortener_info[0]
+    else:
+        shortener = shortener_info or domain
 
     # Cache hit
     if url in _cache:
         logger.info(f"Cache hit for {url}")
-        return BypassResult(True, _cache[url], shortener, "cache", time.time() - start)
+        ms = (time.time() - start) * 1000
+        return BypassResult(True, _cache[url], shortener, "cache", ms, 0, True)
 
     is_cf = domain in CF_PROTECTED_DOMAINS
 
-    # CF-protected sites skip to layers 3-5 first
     if is_cf:
         layers = [
             ("Layer3_APIs", _run_layer3),
@@ -115,18 +136,19 @@ async def bypass_url(url: str, timeout: int = None) -> BypassResult:
             logger.info(f"[{shortener}] Trying {name} ({remaining:.1f}s left)")
             result = await asyncio.wait_for(runner(url), timeout=min(remaining, 25))
             if result and is_destination_url(result, url):
-                took = elapsed()
-                logger.info(f"[{shortener}] {name} succeeded in {took:.1f}s -> {result}")
+                took_ms = elapsed() * 1000
+                logger.info(f"[{shortener}] {name} succeeded in {took_ms:.0f}ms -> {result}")
                 _cache[url] = result
                 _stats["success"] += 1
                 _stats["by_layer"][name] = _stats["by_layer"].get(name, 0) + 1
-                return BypassResult(True, result, shortener, name, took)
+                layer_num = LAYER_NUMBERS.get(name, 0)
+                return BypassResult(True, result, shortener, name, took_ms, layer_num, False)
         except asyncio.TimeoutError:
             logger.warning(f"[{shortener}] {name} timed out")
         except Exception as e:
             logger.warning(f"[{shortener}] {name} error: {e}")
 
-    return BypassResult(False, shortener=shortener, time_taken=elapsed(),
+    return BypassResult(False, shortener=shortener, time_taken_ms=elapsed() * 1000,
                         error="All layers failed")
 
 
