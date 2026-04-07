@@ -1,6 +1,6 @@
 """
 LinkBypass Pro Bot — Configuration
-===================================
+=====================================
 Central configuration for the Telegram link bypass bot.
 All environment variables and constants are managed here.
 """
@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("LinkBypassBot")
 
-# ── Telegram ───────────────────────────────────────────────
+# ── Telegram ──────────────────────────────────────────────
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
 BOT_USERNAME = os.getenv("BOT_USERNAME", "LinkBypassProBot")
@@ -78,12 +78,12 @@ DEFAULT_COOLDOWN_SECONDS = 5
 DEFAULT_BATCH_FREE = 5
 DEFAULT_BATCH_PREMIUM = 25
 
-# ── Premium Defaults ───────────────────────────────────────
+# ── Premium Defaults ────────────────────────────────────────
 DEFAULT_STARS_PRICE = 150
 DEFAULT_STARS_DAYS = 30
 DEFAULT_REFERRAL_COUNT = 3
 DEFAULT_REFERRAL_DAYS = 3
 
 # ── Version ────────────────────────────────────────────────
-BOT_VERSION = "3.0.0"
+BOT_VERSION = "3.1.0"
 BOT_NAME = "LinkBypass Pro"
