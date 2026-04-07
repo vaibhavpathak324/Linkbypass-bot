@@ -1,1 +1,337 @@
-"""\nLinkBypass Pro \u2014 Layer 3: External Bypass APIs + Self-Hosted Engine v4.0\n=========================================================================\nMulti-strategy bypass using 10+ external API services, curl_cffi TLS\nfingerprinting, and intelligent AdLinkFly flow automation.\n\nKey innovations:\n- 10+ bypass API endpoints with adaptive ranking\n- curl_cffi with JA3 fingerprint rotation (Chrome/Safari/Edge/Firefox)\n- Full AdLinkFly CMS flow automation with CF cookie reuse\n- Intelligent retry with exponential backoff\n- Response validation to prevent false positives\n"""\n\nimport logging\nimport json\nimport random\nimport time\nimport re\nimport asyncio\nimport hashlib\nfrom typing import Optional, List, Dict\nfrom urllib.parse import quote, urlparse, urljoin\n\nimport httpx\n\nfrom bot.config import API_TIMEOUT, USER_AGENTS\nfrom bot.engine.url_utils import is_valid_url, get_domain, extract_csrf_token, extract_hidden_inputs\n\nlogger = logging.getLogger(__name__)\n\n# \u2500\u2500 Blocklist: never return these as \"bypassed\" URLs \u2500\u2500\u2500\u2500\u2500\u2500\nBLOCKLIST_DOMAINS = {\n    'cloudflare.com', 'challenges.cloudflare.com', 'google.com',\n    'gstatic.com', 'googleapis.com', 'facebook.com', 'fbcdn.net',\n    'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',\n    'adsense.com', 'analytics.google.com', 'cdn.jsdelivr.net',\n    'jquery.com', 'bootstrapcdn.com', 'cloudflareinsights.com',\n}\n\ndef _is_valid_destination(url: str, source_domain: str) -> bool:\n    \"\"\"Validate that a URL is a real destination, not junk.\"\"\"\n    if not url or not is_valid_url(url):\n        return False\n    dest = get_domain(url)\n    if not dest or dest == source_domain:\n        return False\n    if dest in BLOCKLIST_DOMAINS:\n        return False\n    if any(bl in dest for bl in ['cloudflare', 'google-analytics', 'adsense', 'doubleclick']):\n        return False\n    if len(url) < 10:\n        return False\n    return True\n\n\nclass BypassAPI:\n    \"\"\"Base class with stats tracking.\"\"\"\n    def __init__(self, name: str, priority: int = 5):\n        self.name = name\n        self.priority = priority\n        self.successes = 0\n        self.failures = 0\n        self.last_success = 0\n\n    async def bypass(self, url: str) -> Optional[str]:\n        raise NotImplementedError\n\n    @property\n    def score(self) -> float:\n        total = self.successes + self.failures\n        rate = self.successes / total if total > 0 else 0.5\n        recency = min(1.0, (time.time() - self.last_success) / 3600) if self.last_success else 0.5\n        return rate * 0.7 + (1 - recency) * 0.3\n\n    def _record_success(self):\n        self.successes += 1\n        self.last_success = time.time()\n\n    def _record_failure(self):\n        self.failures += 1\n\n\nclass MultiEndpointAPI(BypassAPI):\n    \"\"\"Tries 10+ free bypass API services.\"\"\"\n\n    def __init__(self):\n        super().__init__(\"multi-api\", priority=1)\n\n    async def bypass(self, url: str) -> Optional[str]:\n        source_domain = get_domain(url)\n        encoded = quote(url, safe='')\n\n        endpoints = [\n            {\"url\": \"https://api.bypass.vip/bypass\", \"method\": \"POST\",\n             \"json\": {\"url\": url}, \"keys\": [\"destination\", \"result\", \"bypassed\", \"url\"]},\n            {\"url\": \"https://bypass.pm/bypass2\", \"method\": \"POST\",\n             \"form\": {\"url\": url}, \"keys\": [\"destination\", \"result\", \"url\"]},\n            {\"url\": f\"https://api.emilyx.in/bypass?url={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"result\", \"bypassed_link\", \"url\", \"destination\"]},\n            {\"url\": f\"https://adbypass.org/bypass?url={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"bypassed\", \"destination\", \"result\", \"url\"]},\n            {\"url\": \"https://short-link-bypass.vercel.app/bypass\", \"method\": \"POST\",\n             \"json\": {\"url\": url}, \"keys\": [\"bypass\", \"destination\", \"result\"]},\n            {\"url\": f\"https://api.thebypasser.com/bypass?url={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"result\", \"bypassed\", \"destination\", \"url\"]},\n            {\"url\": \"https://bypass.bot/bypass\", \"method\": \"POST\",\n             \"json\": {\"url\": url, \"type\": \"auto\"}, \"keys\": [\"destination\", \"result\", \"bypass\", \"url\"]},\n            {\"url\": f\"https://bypass-api.vercel.app/api/bypass?url={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"result\", \"destination\", \"url\", \"bypassed\"]},\n            {\"url\": f\"https://bypass-api-gold.vercel.app/bypass?url={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"result\", \"destination\", \"url\"]},\n            {\"url\": f\"https://relayo.com/api/bypass?link={encoded}\", \"method\": \"GET\",\n             \"keys\": [\"url\", \"result\", \"destination\", \"link\"]},\n        ]\n\n        random.shuffle(endpoints)\n\n        async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=False) as client:\n            for ep in endpoints:\n                try:\n                    headers = {\n                        'User-Agent': random.choice(USER_AGENTS),\n                        'Accept': 'application/json',\n                    }\n\n                    if ep[\"method\"] == \"POST\":\n                        if \"json\" in ep:\n                            resp = await client.post(ep[\"url\"], json=ep[\"json\"], headers=headers)\n                        else:\n                            resp = await client.post(ep[\"url\"], data=ep.get(\"form\", {}), headers=headers)\n                    else:\n                        resp = await client.get(ep[\"url\"], headers=headers)\n\n                    if resp.status_code != 200:\n                        continue\n\n                    result = self._extract_url(resp.text, ep.get(\"keys\", []), source_domain)\n                    if result:\n                        self._record_success()\n                        logger.info(f\"[Layer3] {ep['url'][:40]} -> {result[:80]}\")\n                        return result\n\n                except Exception as e:\n                    logger.debug(f\"[Layer3] {ep.get('url','')[:40]} err: {e}\")\n                    continue\n\n        self._record_failure()\n        return None\n\n    def _extract_url(self, text: str, keys: list, source_domain: str) -> Optional[str]:\n        try:\n            data = json.loads(text.strip())\n        except Exception:\n            text = text.strip()\n            if _is_valid_destination(text, source_domain):\n                return text\n            return None\n\n        if not isinstance(data, dict):\n            return None\n\n        for key in keys:\n            val = data.get(key)\n            if isinstance(val, str) and _is_valid_destination(val, source_domain):\n                return val\n\n        for k in ['data', 'response', 'result']:\n            nested = data.get(k)\n            if isinstance(nested, dict):\n                for key in ['url', 'link', 'destination', 'result', 'bypassed']:\n                    val = nested.get(key)\n                    if isinstance(val, str) and _is_valid_destination(val, source_domain):\n                        return val\n            elif isinstance(nested, str) and _is_valid_destination(nested, source_domain):\n                return nested\n\n        for v in data.values():\n            if isinstance(v, str) and _is_valid_destination(v, source_domain):\n                return v\n\n        return None\n\n\nclass CurlCffiEngine(BypassAPI):\n    \"\"\"Direct CF bypass via curl_cffi TLS fingerprinting.\"\"\"\n\n    def __init__(self):\n        super().__init__(\"curl-cffi\", priority=0)\n\n    async def bypass(self, url: str) -> Optional[str]:\n        try:\n            from curl_cffi.requests import AsyncSession\n        except ImportError:\n            return None\n\n        domain = get_domain(url)\n        profiles = [\"chrome124\", \"chrome120\", \"chrome116\", \"safari17_0\", \"edge101\"]\n\n        for profile in profiles:\n            try:\n                async with AsyncSession(impersonate=profile, timeout=API_TIMEOUT, verify=False) as s:\n                    resp = await s.get(url, headers={\n                        'User-Agent': random.choice(USER_AGENTS),\n                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',\n                        'Accept-Language': 'en-US,en;q=0.9',\n                        'Sec-Ch-Ua': '\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\"',\n                        'Sec-Ch-Ua-Mobile': '?0',\n                        'Sec-Ch-Ua-Platform': '\"Windows\"',\n                        'Upgrade-Insecure-Requests': '1',\n                        'Sec-Fetch-Dest': 'document',\n                        'Sec-Fetch-Mode': 'navigate',\n                        'Sec-Fetch-Site': 'none',\n                        'Sec-Fetch-User': '?1',\n                        'Referer': 'https://www.google.com/',\n                    }, allow_redirects=True, max_redirects=10)\n\n                    final = str(resp.url)\n                    if _is_valid_destination(final, domain):\n                        self._record_success()\n                        return final\n\n                    if resp.status_code == 200:\n                        html = resp.text\n                        dest = self._extract_from_html(html, domain)\n                        if dest:\n                            self._record_success()\n                            return dest\n\n                        result = await self._try_adlinkfly_flow(s, url, html, domain, profile)\n                        if result:\n                            self._record_success()\n                            return result\n\n                    if resp.status_code == 403:\n                        continue\n\n            except Exception as e:\n                logger.debug(f\"[CurlCffi] {profile} err: {e}\")\n                continue\n\n        self._record_failure()\n        return None\n\n    async def _try_adlinkfly_flow(self, session, url, html, domain, profile) -> Optional[str]:\n        \"\"\"Complete AdLinkFly bypass flow with TLS fingerprint.\"\"\"\n        parsed = urlparse(url)\n        base = f\"{parsed.scheme}://{parsed.netloc}\"\n        alias = parsed.path.strip('/').split('/')[-1]\n        if not alias:\n            return None\n\n        csrf = extract_csrf_token(html)\n        hidden = extract_hidden_inputs(html)\n\n        ajax_h = {\n            'Accept': 'application/json, text/javascript, */*; q=0.01',\n            'X-Requested-With': 'XMLHttpRequest',\n            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',\n            'Origin': base,\n            'Referer': url,\n            'Sec-Fetch-Dest': 'empty',\n            'Sec-Fetch-Mode': 'cors',\n            'Sec-Fetch-Site': 'same-origin',\n        }\n\n        payloads = []\n        if hidden:\n            p = hidden.copy()\n            if csrf:\n                p['_token'] = csrf\n            payloads.append(p)\n        if csrf:\n            payloads.append({'_token': csrf, 'alias': alias})\n            payloads.append({'_token': csrf, 'id': alias})\n        payloads.append({'alias': alias})\n\n        for go in [f'{base}/links/go', f'{base}/link/go', f'{base}/go/{alias}']:\n            for payload in payloads:\n                try:\n                    r = await session.post(go, data=payload, headers=ajax_h)\n                    result = self._parse_response(r, domain)\n                    if result:\n                        return result\n                except Exception:\n                    continue\n\n        if hidden or csrf:\n            fd = (hidden or {}).copy()\n            if csrf:\n                fd['_token'] = csrf\n            try:\n                r = await session.post(url, data=fd, headers={\n                    'Origin': base, 'Referer': url,\n                    'Content-Type': 'application/x-www-form-urlencoded',\n                })\n                return self._parse_response(r, domain)\n            except Exception:\n                pass\n\n        return None\n\n    def _extract_from_html(self, html, domain):\n        patterns = [\n            r'window\\.location(?:\\.href)?\\s*=\\s*[\"\\']( https?://[^\"\\' ]+)[\"\\.']',\n            r'location\\.replace\\([\"\\']( https?://[^\"\\' ]+)[\"\\']',\n            r'<meta[^>]+url=(https?://[^\"\\'>]+)',\n            r'\"(?:url|link|destination|redirect)\"\\s*:\\s*\"(https?://[^\"]+)\"',\n            r'href=[\"\\']( https?://[^\"\\' ]+)[\"\\'].*?(?:btn|button|continue|go|visit)',\n            r'var\\s+(?:url|link|dest|redirect)\\s*=\\s*[\"\\']( https?://[^\"\\' ]+)[\"\\']',\n        ]\n        for pat in patterns:\n            try:\n                m = re.search(pat, html, re.IGNORECASE)\n                if m and _is_valid_destination(m.group(1), domain):\n                    return m.group(1)\n            except Exception:\n                continue\n        return None\n\n    def _parse_response(self, resp, domain):\n        if not resp:\n            return None\n        if hasattr(resp, 'status_code') and resp.status_code in (301, 302, 303, 307, 308):\n            loc = resp.headers.get('location', '')\n            if _is_valid_destination(loc, domain):\n                return loc\n        final = str(resp.url)\n        if _is_valid_destination(final, domain):\n            return final\n        if hasattr(resp, 'status_code') and resp.status_code != 200:\n            return None\n        text = resp.text.strip()\n        try:\n            data = json.loads(text)\n            if isinstance(data, dict):\n                for k in ['url', 'link', 'destination', 'redirect', 'result',\n                          'destination_url', 'go_url', 'target', 'final_url']:\n                    v = data.get(k)\n                    if isinstance(v, str) and _is_valid_destination(v, domain):\n                        return v\n        except Exception:\n            pass\n        if _is_valid_destination(text, domain):\n            return text\n        for u in re.findall(r'https?://[^\\s\"\\' <>]+', text[:5000]):\n            u = u.rstrip('.,;:)')\n            if _is_valid_destination(u, domain):\n                return u\n        return None\n\n\nclass CloudscraperEngine(BypassAPI):\n    \"\"\"cloudscraper with JS challenge solving.\"\"\"\n\n    def __init__(self):\n        super().__init__(\"cloudscraper\", priority=2)\n\n    async def bypass(self, url: str) -> Optional[str]:\n        try:\n            import cloudscraper\n        except ImportError:\n            return None\n\n        domain = get_domain(url)\n\n        def _scrape():\n            scraper = cloudscraper.create_scraper(\n                browser={\"browser\": \"chrome\", \"platform\": \"windows\", \"desktop\": True},\n                delay=5,\n            )\n            scraper.headers.update({\n                \"Accept\": \"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\",\n                \"Accept-Language\": \"en-US,en;q=0.9\",\n                \"Upgrade-Insecure-Requests\": \"1\",\n                \"Sec-Fetch-Dest\": \"document\",\n                \"Sec-Fetch-Mode\": \"navigate\",\n                \"Sec-Fetch-Site\": \"none\",\n                \"Sec-Fetch-User\": \"?1\",\n            })\n            resp = scraper.get(url, allow_redirects=True, timeout=20)\n            final = resp.url\n            if _is_valid_destination(final, domain):\n                return final\n            if resp.status_code == 200:\n                for pat in [\n                    r'window\\.location(?:\\.href)?\\s*=\\s*[\"\\']( https?://[^\"\\' ]+)[\"\\']',\n                    r'<meta[^>]+url=(https?://[^\"\\'>]+)',\n                ]:\n                    m = re.search(pat, resp.text, re.IGNORECASE)\n                    if m and _is_valid_destination(m.group(1), domain):\n                        return m.group(1)\n            return None\n\n        loop = asyncio.get_event_loop()\n        try:\n            result = await loop.run_in_executor(None, _scrape)\n            if result:\n                self._record_success()\n                return result\n        except Exception as e:\n            logger.debug(f\"[CloudScraper] err: {e}\")\n\n        self._record_failure()\n        return None\n\n\nclass GenericUnshortener(BypassAPI):\n    \"\"\"Simple HEAD/GET redirect follower.\"\"\"\n\n    def __init__(self):\n        super().__init__(\"unshorten\", priority=8)\n\n    async def bypass(self, url: str) -> Optional[str]:\n        try:\n            async with httpx.AsyncClient(\n                timeout=15, verify=False, follow_redirects=True, max_redirects=15\n            ) as client:\n                resp = await client.head(url, headers={'User-Agent': random.choice(USER_AGENTS)})\n                final = str(resp.url)\n                if final != url and is_valid_url(final):\n                    self._record_success()\n                    return final\n        except Exception:\n            pass\n        self._record_failure()\n        return None\n\n\n_apis: List[BypassAPI] = [\n    CurlCffiEngine(),\n    MultiEndpointAPI(),\n    CloudscraperEngine(),\n    GenericUnshortener(),\n]\n\n\nasync def attempt(url: str) -> Optional[str]:\n    \"\"\"Try all APIs sorted by adaptive score.\"\"\"\n    logger.info(f\"[Layer3] Trying {len(_apis)} engines for: {url[:80]}\")\n\n    sorted_apis = sorted(_apis, key=lambda a: -a.score)\n\n    for api in sorted_apis:\n        try:\n            result = await asyncio.wait_for(api.bypass(url), timeout=25)\n            if result:\n                logger.info(f\"[Layer3] {api.name} success: {result[:80]}\")\n                return result\n        except asyncio.TimeoutError:\n            logger.debug(f\"[Layer3] {api.name} timeout\")\n        except Exception as e:\n            logger.debug(f\"[Layer3] {api.name} err: {e}\")\n\n    return None\n\n\ndef get_api_stats() -> List[dict]:\n    return [{'name': a.name, 'successes': a.successes, 'failures': a.failures,\n             'score': f\"{a.score:.0%}\"} for a in _apis]\n
+"""
+LinkBypass Pro — Layer 3: External Bypass APIs + Self-Hosted Engine v4.0
+=========================================================================
+Multi-strategy bypass using 10+ external API services, curl_cffi TLS
+fingerprinting, and intelligent AdLinkFly flow automation.
+"""
+
+import logging
+import json
+import random
+import time
+import re
+import asyncio
+import hashlib
+from typing import Optional, List, Dict
+from urllib.parse import quote, urlparse, urljoin
+
+import httpx
+
+from bot.config import API_TIMEOUT, USER_AGENTS
+from bot.engine.url_utils import is_valid_url, get_domain, extract_csrf_token, extract_hidden_inputs
+
+logger = logging.getLogger(__name__)
+
+# ── Blocklist: never return these as "bypassed" URLs ──────
+BLOCKLIST_DOMAINS = {
+    'cloudflare.com', 'challenges.cloudflare.com', 'google.com',
+    'gstatic.com', 'googleapis.com', 'facebook.com', 'fbcdn.net',
+    'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+    'adsense.com', 'analytics.google.com', 'cdn.jsdelivr.net',
+    'jquery.com', 'bootstrapcdn.com', 'cloudflareinsights.com',
+}
+
+def _is_valid_destination(url: str, source_domain: str) -> bool:
+    """Validate that a URL is a real destination, not junk."""
+    if not url or not is_valid_url(url):
+        return False
+    dest = get_domain(url)
+    if not dest or dest == source_domain:
+        return False
+    if dest in BLOCKLIST_DOMAINS:
+        return False
+    if any(bl in dest for bl in ['cloudflare', 'google-analytics', 'adsense', 'doubleclick']):
+        return False
+    if len(url) < 10:
+        return False
+    return True
+
+
+class BypassAPI:
+    """Base class with stats tracking."""
+
+    def __init__(self, name: str, priority: int = 5):
+        self.name = name
+        self.priority = priority
+        self.successes = 0
+        self.failures = 0
+        self.last_success = 0
+
+    async def bypass(self, url: str) -> Optional[str]:
+        raise NotImplementedError
+
+    def score(self) -> float:
+        total = self.successes + self.failures
+        rate = self.successes / total if total > 0 else 0.5
+        recency = min(1.0, (time.time() - self.last_success) / 3600) if self.last_success else 0.5
+        return rate * 0.7 + (1 - recency) * 0.3
+
+    def _record_success(self):
+        self.successes += 1
+        self.last_success = time.time()
+
+    def _record_failure(self):
+        self.failures += 1
+
+
+class MultiEndpointAPI(BypassAPI):
+    """Tries 10+ free bypass API services."""
+
+    def __init__(self):
+        super().__init__("multi-api", priority=1)
+
+    async def bypass(self, url: str) -> Optional[str]:
+        source_domain = get_domain(url)
+        encoded = quote(url, safe='')
+
+        endpoints = [
+            {"url": "https://api.bypass.vip/bypass", "method": "POST",
+             "json": {"url": url}, "keys": ["destination", "result", "bypassed", "url"]},
+            {"url": "https://bypass.pm/bypass2", "method": "POST",
+             "form": {"url": url}, "keys": ["destination", "result", "url"]},
+            {"url": f"https://api.emilyx.in/bypass?url={encoded}", "method": "GET",
+             "keys": ["result", "bypassed_link", "url", "destination"]},
+            {"url": f"https://adbypass.org/bypass?url={encoded}", "method": "GET",
+             "keys": ["bypassed", "destination", "result", "url"]},
+            {"url": "https://short-link-bypass.vercel.app/bypass", "method": "POST",
+             "json": {"url": url}, "keys": ["bypass", "destination", "result"]},
+            {"url": f"https://api.thebypasser.com/bypass?url={encoded}", "method": "GET",
+             "keys": ["result", "bypassed", "destination", "url"]},
+            {"url": "https://bypass.bot/bypass", "method": "POST",
+             "json": {"url": url, "type": "auto"}, "keys": ["destination", "result", "bypass", "url"]},
+            {"url": f"https://bypass-api.vercel.app/api/bypass?url={encoded}", "method": "GET",
+             "keys": ["result", "destination", "url", "bypassed"]},
+            {"url": f"https://bypass-api-gold.vercel.app/bypass?url={encoded}", "method": "GET",
+             "keys": ["result", "destination", "url"]},
+            {"url": f"https://relayo.com/api/bypass?link={encoded}", "method": "GET",
+             "keys": ["url", "result", "destination", "link"]},
+        ]
+
+        random.shuffle(endpoints)
+
+        async with httpx.AsyncClient(timeout=API_TIMEOUT, verify=False) as client:
+            for ep in endpoints:
+                try:
+                    if ep["method"] == "POST":
+                        kwargs = {}
+                        if "json" in ep:
+                            kwargs["json"] = ep["json"]
+                        elif "form" in ep:
+                            kwargs["data"] = ep["form"]
+                        resp = await client.post(ep["url"], **kwargs)
+                    else:
+                        resp = await client.get(ep["url"])
+
+                    if resp.status_code != 200:
+                        continue
+
+                    result = self._extract_url(resp.text, ep.get("keys", []), source_domain)
+                    if result:
+                        self._record_success()
+                        logger.info(f"[Layer3] {ep['url'][:40]} -> {result[:80]}")
+                        return result
+
+                except Exception as e:
+                    logger.debug(f"[Layer3] {ep.get('url','')[:40]} err: {e}")
+                    continue
+
+        self._record_failure()
+        return None
+
+    def _extract_url(self, text: str, keys: list, source_domain: str) -> Optional[str]:
+        try:
+            data = json.loads(text.strip())
+        except Exception:
+            text = text.strip()
+            if _is_valid_destination(text, source_domain):
+                return text
+            return None
+
+        if not isinstance(data, dict):
+            return None
+
+        for key in keys:
+            val = data.get(key)
+            if isinstance(val, str) and _is_valid_destination(val, source_domain):
+                return val
+
+        for k in ['data', 'response', 'result']:
+            nested = data.get(k)
+            if isinstance(nested, dict):
+                for key in ['url', 'link', 'destination', 'result', 'bypassed']:
+                    val = nested.get(key)
+                    if isinstance(val, str) and _is_valid_destination(val, source_domain):
+                        return val
+            elif isinstance(nested, str) and _is_valid_destination(nested, source_domain):
+                return nested
+
+        for v in data.values():
+            if isinstance(v, str) and _is_valid_destination(v, source_domain):
+                return v
+
+        return None
+
+
+class CurlCffiEngine(BypassAPI):
+    """Direct CF bypass via curl_cffi TLS fingerprinting."""
+
+    def __init__(self):
+        super().__init__("curl-cffi", priority=0)
+
+    async def bypass(self, url: str) -> Optional[str]:
+        try:
+            from curl_cffi.requests import AsyncSession
+        except ImportError:
+            return None
+
+        source_domain = get_domain(url)
+        profiles = ["chrome124", "chrome120", "safari17_0", "edge101", "chrome116"]
+
+        for profile in profiles:
+            try:
+                async with AsyncSession(impersonate=profile, timeout=API_TIMEOUT, verify=False) as session:
+                    resp = await session.get(
+                        url,
+                        headers={
+                            'User-Agent': random.choice(USER_AGENTS),
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.9',
+                            'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124"',
+                            'Sec-Ch-Ua-Mobile': '?0',
+                            'Sec-Ch-Ua-Platform': '"Windows"',
+                            'Upgrade-Insecure-Requests': '1',
+                            'Sec-Fetch-Dest': 'document',
+                            'Sec-Fetch-Mode': 'navigate',
+                            'Sec-Fetch-Site': 'none',
+                            'Sec-Fetch-User': '?1',
+                        },
+                        allow_redirects=True,
+                        max_redirects=10,
+                    )
+
+                    final = str(resp.url)
+                    if _is_valid_destination(final, source_domain):
+                        self._record_success()
+                        return final
+
+                    if resp.status_code == 200:
+                        html = resp.text
+                        dest = self._extract_from_html(html, source_domain)
+                        if dest:
+                            self._record_success()
+                            return dest
+
+                        dest = await self._try_adlinkfly(session, url, html, source_domain)
+                        if dest:
+                            self._record_success()
+                            return dest
+
+                    if resp.status_code == 403:
+                        continue
+
+            except Exception:
+                continue
+
+        self._record_failure()
+        return None
+
+    def _extract_from_html(self, html: str, source_domain: str) -> Optional[str]:
+        patterns = [
+            r'window\.location(?:\.href)?\s*=\s*["\'](https?://[^"\' ]+)[\"\']',
+            r'location\.replace\(["\'](https?://[^"\' ]+)[\"\']',
+            r'<meta[^>]+url=(https?://[^"\'>]+)',
+            r'"(?:url|link|destination|redirect)"\s*:\s*"(https?://[^"]+)"',
+            r'href=["\'](https?://[^"\'\s]+)[\"\'].*?(?:btn|button|continue|go|visit)',
+        ]
+        for pat in patterns:
+            m = re.search(pat, html, re.IGNORECASE)
+            if m and _is_valid_destination(m.group(1), source_domain):
+                return m.group(1)
+        return None
+
+    async def _try_adlinkfly(self, session, url: str, html: str, source_domain: str) -> Optional[str]:
+        """Handle AdLinkFly CMS flow."""
+        try:
+            csrf = extract_csrf_token(html)
+            hidden = extract_hidden_inputs(html)
+
+            if not csrf and not hidden:
+                return None
+
+            parsed = urlparse(url)
+            go_url = f"{parsed.scheme}://{parsed.netloc}/links/go"
+
+            form_data = {**hidden}
+            if csrf:
+                form_data['_token'] = csrf
+                form_data['_csrfToken'] = csrf
+
+            resp = await session.post(
+                go_url,
+                data=form_data,
+                headers={
+                    'Referer': url,
+                    'Origin': f"{parsed.scheme}://{parsed.netloc}",
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                allow_redirects=True,
+                max_redirects=10,
+            )
+
+            final = str(resp.url)
+            if _is_valid_destination(final, source_domain):
+                return final
+
+            if resp.status_code == 200:
+                dest = self._extract_from_html(resp.text, source_domain)
+                if dest:
+                    return dest
+
+        except Exception as e:
+            logger.debug(f"[Layer3] AdLinkFly flow failed: {e}")
+
+        return None
+
+
+_apis: List[BypassAPI] = []
+
+def _get_apis() -> List[BypassAPI]:
+    global _apis
+    if not _apis:
+        _apis = [
+            CurlCffiEngine(),
+            MultiEndpointAPI(),
+        ]
+    return _apis
+
+
+async def attempt(url: str) -> Optional[str]:
+    """Try all external API services, ranked by score."""
+    apis = sorted(_get_apis(), key=lambda a: a.score(), reverse=True)
+
+    for api in apis:
+        try:
+            result = await asyncio.wait_for(api.bypass(url), timeout=API_TIMEOUT + 5)
+            if result and is_valid_url(result):
+                logger.info(f"[Layer3] {api.name} bypassed: {result[:80]}")
+                return result
+        except asyncio.TimeoutError:
+            logger.debug(f"[Layer3] {api.name} timed out")
+            api._record_failure()
+        except Exception as e:
+            logger.debug(f"[Layer3] {api.name} error: {e}")
+            api._record_failure()
+
+    return None
+
+
+def get_api_stats() -> Dict:
+    """Return stats for admin panel."""
+    return {
+        api.name: {
+            "successes": api.successes,
+            "failures": api.failures,
+            "score": round(api.score(), 3),
+        }
+        for api in _get_apis()
+    }
