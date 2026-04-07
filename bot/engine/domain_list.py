@@ -300,7 +300,7 @@ KNOWN_SHORTENER_DOMAINS: Dict[str, dict] = {
     "shrinkpay.in": {"name": "ShrinkPay", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
     "linkpays.in": {"name": "LinkPays", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
     "viralshort.com": {"name": "ViralShort", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
-    "lksfy.com": {"name": "LksFy", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
+    "lksfy.com": {"name": "LksFy", "category": "adlinkfly", "method": "headless", "module": "adlinkfly", "cf_protected": True},
     "bfrfrlinks.com": {"name": "BFRFRLinks", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
     "earnlink.io": {"name": "EarnLink", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
     "go.earnlink.io": {"name": "EarnLink", "category": "adlinkfly", "method": "pattern", "module": "adlinkfly"},
