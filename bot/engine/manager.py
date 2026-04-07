@@ -2,8 +2,7 @@
 LinkBypass Pro — Bypass Engine Manager v3.1
 ============================================
 6-layer bypass orchestrator with intelligent routing.
-Now enables Layer 5 by default and prioritizes CF-aware
-methods for known CF-protected domains.
+CF-aware routing for Cloudflare-protected domains.
 """
 
 import time
@@ -21,7 +20,6 @@ from bot.engine.domain_list import get_shortener_info, get_total_count
 
 logger = logging.getLogger(__name__)
 
-# Domains known to use Cloudflare protection
 CF_PROTECTED_DOMAINS = {
     "lksfy.com", "linkvertise.com", "link1s.com", "shrinkme.io",
     "shrinkforearn.in", "indianshortner.com", "easysky.in",
@@ -41,107 +39,103 @@ class BypassResult:
     error: Optional[str] = None
 
 
-class BypassManager:
-    """Central orchestrator for all bypass layers."""
+# Module-level cache and stats
+_cache: dict = {}
+_stats = {"total": 0, "success": 0, "by_layer": {}}
 
-    def __init__(self):
-        self._cache: dict = {}
-        self._stats = {"total": 0, "success": 0, "by_layer": {}}
 
-    async def bypass(self, url: str, timeout: int = None) -> BypassResult:
-        """Main entry: try each layer in order until one succeeds."""
-        timeout = timeout or GLOBAL_BYPASS_TIMEOUT
-        start = time.time()
-        self._stats["total"] += 1
+async def _run_layer1(url: str) -> Optional[str]:
+    from bot.engine.layer1_redirect import attempt
+    return await attempt(url)
 
-        url = normalize_url(url)
-        if not is_valid_url(url):
-            return BypassResult(False, error="Invalid URL")
-        if not is_shortener_url(url):
-            return BypassResult(False, error="Not a known shortener URL")
+async def _run_layer2(url: str) -> Optional[str]:
+    from bot.engine.layer2_patterns import attempt
+    return await attempt(url)
 
-        domain = get_domain(url)
-        shortener = detect_shortener(url)
+async def _run_layer3(url: str) -> Optional[str]:
+    from bot.engine.layer3_external_apis import attempt
+    return await attempt(url)
 
-        # Cache hit?
-        if url in self._cache:
-            logger.info(f"Cache hit for {url}")
-            cached = self._cache[url]
-            return BypassResult(True, cached, shortener, "cache", time.time() - start)
+async def _run_layer4(url: str) -> Optional[str]:
+    from bot.engine.layer4_browser import try_cloudscraper_bypass
+    return await try_cloudscraper_bypass(url)
 
-        is_cf = domain in CF_PROTECTED_DOMAINS
+async def _run_layer5(url: str) -> Optional[str]:
+    from bot.engine.layer5_headless import attempt
+    return await attempt(url)
 
-        # Build layer pipeline — CF-protected sites skip straight to layers 3-5
-        if is_cf:
-            layers = [
-                ("Layer3_APIs", self._run_layer3),
-                ("Layer4_Cloudscraper", self._run_layer4),
-                ("Layer5_Headless", self._run_layer5),
-                ("Layer1_Redirect", self._run_layer1),
-                ("Layer2_Patterns", self._run_layer2),
-            ]
-        else:
-            layers = [
-                ("Layer1_Redirect", self._run_layer1),
-                ("Layer2_Patterns", self._run_layer2),
-                ("Layer3_APIs", self._run_layer3),
-                ("Layer4_Cloudscraper", self._run_layer4),
-                ("Layer5_Headless", self._run_layer5),
-            ]
 
-        elapsed = lambda: time.time() - start
-        for name, runner in layers:
-            remaining = timeout - elapsed()
-            if remaining <= 0:
-                break
-            try:
-                logger.info(f"[{shortener}] Trying {name} ({remaining:.1f}s left)")
-                result = await asyncio.wait_for(runner(url), timeout=min(remaining, 25))
-                if result and is_destination_url(result, url):
-                    took = elapsed()
-                    logger.info(f"[{shortener}] {name} succeeded in {took:.1f}s -> {result}")
-                    self._cache[url] = result
-                    self._stats["success"] += 1
-                    self._stats["by_layer"][name] = self._stats["by_layer"].get(name, 0) + 1
-                    return BypassResult(True, result, shortener, name, took)
-            except asyncio.TimeoutError:
-                logger.warning(f"[{shortener}] {name} timed out")
-            except Exception as e:
-                logger.warning(f"[{shortener}] {name} error: {e}")
+async def bypass_url(url: str, timeout: int = None) -> BypassResult:
+    """Main entry point — try each layer in order until one succeeds."""
+    global _cache, _stats
+    timeout = timeout or GLOBAL_BYPASS_TIMEOUT
+    start = time.time()
+    _stats["total"] += 1
 
-        return BypassResult(False, shortener=shortener, time_taken=elapsed(),
-                            error="All layers failed")
+    url = normalize_url(url)
+    if not is_valid_url(url):
+        return BypassResult(False, error="Invalid URL")
+    if not is_shortener_url(url):
+        return BypassResult(False, error="Not a known shortener URL")
 
-    # Layer runners - use attempt() which is the standard function name
+    domain = get_domain(url)
+    shortener = detect_shortener(url)
 
-    async def _run_layer1(self, url: str) -> Optional[str]:
-        from bot.engine.layer1_redirect import attempt
-        return await attempt(url)
+    # Cache hit
+    if url in _cache:
+        logger.info(f"Cache hit for {url}")
+        return BypassResult(True, _cache[url], shortener, "cache", time.time() - start)
 
-    async def _run_layer2(self, url: str) -> Optional[str]:
-        from bot.engine.layer2_patterns import attempt
-        return await attempt(url)
+    is_cf = domain in CF_PROTECTED_DOMAINS
 
-    async def _run_layer3(self, url: str) -> Optional[str]:
-        from bot.engine.layer3_external_apis import attempt
-        return await attempt(url)
+    # CF-protected sites skip to layers 3-5 first
+    if is_cf:
+        layers = [
+            ("Layer3_APIs", _run_layer3),
+            ("Layer4_Cloudscraper", _run_layer4),
+            ("Layer5_Headless", _run_layer5),
+            ("Layer1_Redirect", _run_layer1),
+            ("Layer2_Patterns", _run_layer2),
+        ]
+    else:
+        layers = [
+            ("Layer1_Redirect", _run_layer1),
+            ("Layer2_Patterns", _run_layer2),
+            ("Layer3_APIs", _run_layer3),
+            ("Layer4_Cloudscraper", _run_layer4),
+            ("Layer5_Headless", _run_layer5),
+        ]
 
-    async def _run_layer4(self, url: str) -> Optional[str]:
-        from bot.engine.layer4_browser import try_cloudscraper_bypass
-        return await try_cloudscraper_bypass(url)
+    elapsed = lambda: time.time() - start
+    for name, runner in layers:
+        remaining = timeout - elapsed()
+        if remaining <= 0:
+            break
+        try:
+            logger.info(f"[{shortener}] Trying {name} ({remaining:.1f}s left)")
+            result = await asyncio.wait_for(runner(url), timeout=min(remaining, 25))
+            if result and is_destination_url(result, url):
+                took = elapsed()
+                logger.info(f"[{shortener}] {name} succeeded in {took:.1f}s -> {result}")
+                _cache[url] = result
+                _stats["success"] += 1
+                _stats["by_layer"][name] = _stats["by_layer"].get(name, 0) + 1
+                return BypassResult(True, result, shortener, name, took)
+        except asyncio.TimeoutError:
+            logger.warning(f"[{shortener}] {name} timed out")
+        except Exception as e:
+            logger.warning(f"[{shortener}] {name} error: {e}")
 
-    async def _run_layer5(self, url: str) -> Optional[str]:
-        from bot.engine.layer5_headless import attempt
-        return await attempt(url)
+    return BypassResult(False, shortener=shortener, time_taken=elapsed(),
+                        error="All layers failed")
 
-    # Stats
 
-    def get_stats(self) -> dict:
-        return {
-            "total": self._stats["total"],
-            "success": self._stats["success"],
-            "rate": f"{(self._stats['success']/max(1,self._stats['total']))*100:.1f}%",
-            "by_layer": self._stats["by_layer"],
-            "cache_size": len(self._cache),
-            "supported": get_total_count(),
-        }
+def get_stats() -> dict:
+    return {
+        "total": _stats["total"],
+        "success": _stats["success"],
+        "rate": f"{(_stats['success']/max(1,_stats['total']))*100:.1f}%",
+        "by_layer": _stats["by_layer"],
+        "cache_size": len(_cache),
+        "supported": get_total_count(),
+    }
