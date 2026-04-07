@@ -10,70 +10,85 @@ import logging
 import importlib
 from typing import Optional
 
-from bot.engine.url_utils import get_domain, is_valid_url
+from bot.engine.url_utils import get_domain, detect_shortener
 from bot.engine.domain_list import get_shortener_info
 
 logger = logging.getLogger(__name__)
 
-# Cache for loaded modules
-_module_cache = {}
+# Pattern module mapping (shortener name -> module name)
+PATTERN_MODULES = {
+    "adfly": "adfly",
+    "adlinkfly": "adlinkfly",
+    "gplinks": "gplinks",
+    "linkvertise": "linkvertise",
+    "ouo": "ouo",
+    "shareus": "shareus",
+    "shortest": "shortest",
+    "bcvc": "bcvc",
+    "filepress": "filepress",
+    "gdtot": "gdtot",
+    "hubcloud": "hubcloud",
+    "mdisk": "mdisk",
+}
 
 
-def _load_pattern_module(module_name: str):
+def _load_pattern_module(name: str):
     """Dynamically load a pattern module."""
-    if module_name in _module_cache:
-        return _module_cache[module_name]
-
     try:
-        mod = importlib.import_module(f"bot.engine.patterns.{module_name}")
-        _module_cache[module_name] = mod
+        mod = importlib.import_module(f"bot.engine.patterns.{name}")
         return mod
     except ImportError as e:
-        logger.warning(f"[Layer2] Pattern module '{module_name}' not found: {e}")
+        logger.debug(f"Pattern module {name} not found: {e}")
         return None
     except Exception as e:
-        logger.error(f"[Layer2] Error loading module '{module_name}': {e}")
+        logger.warning(f"Error loading pattern module {name}: {e}")
         return None
 
 
 async def attempt(url: str) -> Optional[str]:
-    """
-    Attempt to bypass a URL using site-specific patterns.
-
-    This layer:
-    1. Detects which shortener the URL belongs to
-    2. Loads the appropriate pattern module
-    3. Calls the module's bypass function
-    4. Falls back to generic patterns if no specific module exists
-
-    Returns the destination URL or None.
-    """
+    """Try to bypass using a site-specific pattern."""
     domain = get_domain(url)
+    shortener = detect_shortener(url)
     info = get_shortener_info(domain)
 
-    if info and info.get('module'):
-        module_name = info['module']
-        logger.info(f"[Layer2] Using pattern module '{module_name}' for {domain}")
+    # Determine which pattern to try
+    pattern_name = None
+    if info and info.get("pattern"):
+        pattern_name = info["pattern"]
+    elif shortener:
+        pattern_name = shortener.lower()
 
-        mod = _load_pattern_module(module_name)
-        if mod and hasattr(mod, 'bypass'):
-            try:
-                result = await mod.bypass(url)
-                if result and is_valid_url(result):
-                    logger.info(f"[Layer2] Pattern bypass success: {result[:80]}")
-                    return result
-            except Exception as e:
-                logger.debug(f"[Layer2] Pattern module '{module_name}' error: {e}")
+    if not pattern_name:
+        # Try generic pattern as fallback
+        pattern_name = "generic"
 
-    # Always try generic patterns as fallback
-    generic = _load_pattern_module('generic')
-    if generic and hasattr(generic, 'bypass'):
+    # Check if we have a specific module
+    module_name = PATTERN_MODULES.get(pattern_name, pattern_name)
+    mod = _load_pattern_module(module_name)
+
+    if mod and hasattr(mod, "bypass"):
         try:
-            result = await generic.bypass(url)
-            if result and is_valid_url(result):
-                logger.info(f"[Layer2] Generic pattern bypass success: {result[:80]}")
+            result = await mod.bypass(url)
+            if result:
+                logger.info(f"[Layer2] Pattern {pattern_name} succeeded: {result[:80]}")
                 return result
         except Exception as e:
-            logger.debug(f"[Layer2] Generic pattern error: {e}")
+            logger.warning(f"[Layer2] Pattern {pattern_name} error: {e}")
+
+    # Try generic as fallback if specific failed
+    if module_name != "generic":
+        mod = _load_pattern_module("generic")
+        if mod and hasattr(mod, "bypass"):
+            try:
+                result = await mod.bypass(url)
+                if result:
+                    logger.info(f"[Layer2] Generic pattern succeeded: {result[:80]}")
+                    return result
+            except Exception as e:
+                logger.debug(f"[Layer2] Generic pattern error: {e}")
 
     return None
+
+
+# Alias for manager.py import
+try_pattern_bypass = attempt
