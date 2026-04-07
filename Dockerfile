@@ -29,5 +29,5 @@ RUN mkdir -p /app/data
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:10000/health || exit 1
 
-# Run the bot with Xvfb for headed Playwright
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1920x1080x24", "python", "-m", "bot.main"]
+# Run the bot (Xvfb is started from Python when needed)
+CMD ["python", "-m", "bot.main"]
