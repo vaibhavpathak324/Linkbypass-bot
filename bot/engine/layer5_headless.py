@@ -1,246 +1,327 @@
 """
-LinkBypass Pro — Layer 5: Multi-Strategy Advanced Bypass
-=========================================================
-Last resort layer combining multiple advanced techniques:
-- Session-based multi-step navigation
-- AJAX endpoint discovery
-- Token extraction and form submission
-- Base64/encoding tricks
-- API endpoint brute-forcing
+LinkBypass Pro — Layer 5: Ultra-Advanced Multi-Strategy Bypass
+===============================================================
+Last-resort layer combining:
+1. Multi-profile TLS rotation with curl_cffi
+2. cloudscraper with JS challenge solving
+3. Multi-step AdLinkFly flow with delay simulation
+4. DOM parsing and JS extraction
 """
 
 import re
+import json
+import asyncio
 import logging
 import random
 import time
-import json
-import hashlib
-import base64
 from typing import Optional
-from urllib.parse import urljoin, urlparse, parse_qs, urlencode, quote
-
-import httpx
-
-from bot.config import HEADLESS_TIMEOUT, USER_AGENTS
-from bot.engine.url_utils import (
-    is_valid_url, get_domain, extract_meta_refresh,
-    extract_js_redirects, extract_form_action, extract_hidden_inputs,
-    extract_csrf_token, try_base64_decode, extract_countdown,
-    is_destination_url
-)
+from urllib.parse import urlparse, urljoin
 
 logger = logging.getLogger(__name__)
 
 
-class AdvancedBypasser:
-    """Multi-strategy bypass engine for the most stubborn shorteners."""
+# ── Helpers ────────────────────────────────────────────────────
 
-    def __init__(self):
-        self.session: Optional[httpx.AsyncClient] = None
-        self.cookies = {}
-        self.original_url = ""
-        self.original_domain = ""
-        self.visited = set()
-
-    async def __aenter__(self):
-        self.session = httpx.AsyncClient(
-            timeout=httpx.Timeout(HEADLESS_TIMEOUT),
-            follow_redirects=True,
-            verify=False,
-            limits=httpx.Limits(max_connections=10),
+def _is_dest(url: str, src_domain: str) -> bool:
+    """Check if URL is a real destination (not same shortener)."""
+    try:
+        parsed = urlparse(url)
+        return (
+            parsed.scheme in ('http', 'https')
+            and parsed.netloc
+            and parsed.netloc != src_domain
+            and not any(x in parsed.netloc for x in ['cloudflare', 'turnstile', 'challenges'])
         )
-        return self
+    except Exception:
+        return False
 
-    async def __aexit__(self, *args):
-        if self.session:
-            await self.session.aclose()
 
-    def _headers(self, referer: str = None, ajax: bool = False) -> dict:
-        ua = random.choice(USER_AGENTS)
-        h = {
-            'User-Agent': ua,
+def _extract_urls(html: str, src_domain: str) -> list:
+    """Extract all candidate destination URLs from HTML."""
+    patterns = [
+        r'window\.location(?:\.href)?\s*=\s*["\'"](https?://[^"\']+)',
+        r'location\.replace\(["\'"](https?://[^"\']+)',
+        r'<meta[^>]+url=(https?://[^"\'>]+)',
+        r'"(?:url|link|destination|redirect|go_url|final_url|target)"\s*:\s*"(https?://[^"]+)"',
+        r'href=["\'"](https?://[^"\'\s]+)',
+        r'window\.open\(["\'"](https?://[^"\']+)',
+        r'data-(?:url|href|link|redirect)=["\'"](https?://[^"\'\s]+)',
+        r'action=["\'"](https?://[^"\'\s]+)',
+    ]
+    urls = []
+    for pat in patterns:
+        try:
+            for m in re.findall(pat, html, re.IGNORECASE):
+                m = m.rstrip('.,;:)')
+                if _is_dest(m, src_domain):
+                    urls.append(m)
+        except re.error:
+            pass
+    return urls
+
+
+def _extract_adlinkfly_data(html: str) -> dict:
+    """Extract AdLinkFly tokens and form data."""
+    data = {}
+    # CSRF token
+    m = re.search(r'name=["\'"]_token["\'"]\s+value=["\'"](\w+)', html)
+    if m:
+        data['_token'] = m.group(1)
+    m = re.search(r'<meta\s+name=["\'"]csrf-token["\'"]\s+content=["\'"](\w+)', html)
+    if m:
+        data['_token'] = m.group(1)
+    # Hidden inputs
+    for inp in re.findall(r'<input[^>]+type=["\'"]hidden["\'"][^>]*>', html, re.IGNORECASE):
+        nm = re.search(r'name=["\'"](\w+)', inp)
+        vl = re.search(r'value=["\'"](.*?)["\'"]', inp)
+        if nm and vl:
+            data[nm.group(1)] = vl.group(1)
+    # Timer/wait value
+    m = re.search(r'(?:timer|countdown|wait)\s*[:=]\s*(\d+)', html, re.IGNORECASE)
+    if m:
+        data['_wait'] = int(m.group(1))
+    return data
+
+
+async def _strategy_curl_multi(url: str) -> Optional[str]:
+    """Strategy 1: curl_cffi multi-profile rotation."""
+    try:
+        from curl_cffi.requests import AsyncSession
+    except ImportError:
+        return None
+
+    domain = urlparse(url).netloc
+    profiles = ["chrome124", "chrome120", "chrome116", "safari17_0", "edge101"]
+    random.shuffle(profiles)
+
+    for profile in profiles[:4]:
+        try:
+            async with AsyncSession(impersonate=profile, timeout=20, verify=False) as s:
+                h = {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0',
+                    'Referer': 'https://www.google.com/',
+                }
+
+                resp = await s.get(url, headers=h, allow_redirects=True, max_redirects=10)
+
+                final = str(resp.url)
+                if _is_dest(final, domain):
+                    return final
+
+                if resp.status_code == 200:
+                    html = resp.text
+
+                    # Check for AdLinkFly pattern
+                    adf = _extract_adlinkfly_data(html)
+                    if adf.get('_token'):
+                        wait = min(adf.pop('_wait', 3), 8)
+                        await asyncio.sleep(wait)
+
+                        parsed = urlparse(url)
+                        base = f"{parsed.scheme}://{parsed.netloc}"
+                        alias = parsed.path.strip('/').split('/')[-1]
+
+                        ajax_h = {
+                            **h,
+                            'Accept': 'application/json, */*',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'Origin': base,
+                            'Referer': url,
+                            'Sec-Fetch-Dest': 'empty',
+                            'Sec-Fetch-Mode': 'cors',
+                            'Sec-Fetch-Site': 'same-origin',
+                        }
+
+                        if 'alias' not in adf and 'id' not in adf:
+                            adf['alias'] = alias
+
+                        for go_url in [f'{base}/links/go', f'{base}/link/go']:
+                            try:
+                                r2 = await s.post(go_url, data=adf, headers=ajax_h)
+                                f2 = str(r2.url)
+                                if _is_dest(f2, domain):
+                                    return f2
+                                if r2.status_code == 200:
+                                    try:
+                                        jd = r2.json()
+                                        for k in ['url', 'link', 'destination', 'redirect']:
+                                            v = jd.get(k)
+                                            if isinstance(v, str) and _is_dest(v, domain):
+                                                return v
+                                    except Exception:
+                                        pass
+                                if r2.status_code in (301, 302, 303, 307, 308):
+                                    loc = r2.headers.get('location', '')
+                                    if _is_dest(loc, domain):
+                                        return loc
+                            except Exception:
+                                continue
+
+                    # Generic extraction
+                    candidates = _extract_urls(html, domain)
+                    if candidates:
+                        return candidates[0]
+
+                if resp.status_code == 403:
+                    continue
+
+        except Exception as e:
+            logger.debug(f"[Layer5] curl {profile} error: {e}")
+            continue
+
+    return None
+
+
+async def _strategy_cloudscraper(url: str) -> Optional[str]:
+    """Strategy 2: cloudscraper with JS challenge solving."""
+    try:
+        import cloudscraper
+    except ImportError:
+        return None
+
+    domain = urlparse(url).netloc
+
+    def _scrape():
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "desktop": True},
+            delay=8,
+        )
+        scraper.headers.update({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
-        }
-        if ajax:
-            h['X-Requested-With'] = 'XMLHttpRequest'
-            h['Accept'] = 'application/json, text/javascript, */*; q=0.01'
-        else:
-            h['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        if referer:
-            h['Referer'] = referer
-        return h
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Referer': 'https://www.google.com/',
+        })
 
-    async def _try_adlinkfly_api(self, url: str) -> Optional[str]:
-        """Try common AdLinkFly API endpoints."""
-        parsed = urlparse(url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        slug = parsed.path.strip('/')
+        resp = scraper.get(url, allow_redirects=True, timeout=25)
 
-        # Common AdLinkFly API patterns
-        api_endpoints = [
-            f"{base}/api?api=&url={quote(url)}&type=1",
-            f"{base}/links/{slug}",
-            f"{base}/ajax/check_redirect",
-            f"{base}/redirect/{slug}",
-        ]
+        final = resp.url
+        if _is_dest(final, domain):
+            return final
 
-        for endpoint in api_endpoints:
-            try:
-                resp = await self.session.get(
-                    endpoint,
-                    headers=self._headers(referer=url, ajax=True),
-                )
-                if resp.status_code == 200:
-                    text = resp.text
-                    # Try JSON response
-                    try:
-                        data = json.loads(text)
-                        for key in ['url', 'link', 'destination', 'dest', 'redirect_url', 'shortenedUrl']:
-                            if key in data and is_valid_url(str(data[key])):
-                                return str(data[key])
-                    except:
-                        pass
-                    # Try finding URL in response
-                    urls = re.findall(r'https?://[^\s"\'>]+', text)
-                    for u in urls:
-                        if get_domain(u) != self.original_domain and is_destination_url(u, self.original_domain):
-                            return u
-            except:
-                continue
-        return None
-
-    async def _try_form_submission(self, html: str, page_url: str) -> Optional[str]:
-        """Extract and submit forms that may contain bypass tokens."""
-        form_action = extract_form_action(html)
-        if not form_action:
-            return None
-
-        action_url = urljoin(page_url, form_action)
-        hidden = extract_hidden_inputs(html)
-        csrf = extract_csrf_token(html)
-        if csrf:
-            hidden['_token'] = csrf
-
-        try:
-            resp = await self.session.post(
-                action_url,
-                data=hidden,
-                headers=self._headers(referer=page_url),
-            )
-            dest = str(resp.url)
-            if get_domain(dest) != self.original_domain and is_destination_url(dest, self.original_domain):
-                return dest
-            
-            # Check response for redirect URLs
-            text = resp.text
-            meta = extract_meta_refresh(text)
-            if meta and is_valid_url(meta):
-                return meta
-            js_redir = extract_js_redirects(text)
-            if js_redir and is_valid_url(js_redir):
-                return js_redir
-        except:
-            pass
-        return None
-
-    async def _try_source_extraction(self, html: str) -> Optional[str]:
-        """Extract destination from page source patterns."""
-        patterns = [
-            r'var\s+url\s*=\s*["\'](https?://[^"\'>]+)',
-            r'var\s+(?:dest|link|redirect|go_url|final_url)\s*=\s*["\'](https?://[^"\'>]+)',
-            r'window\.location(?:\.href)?\s*=\s*["\'](https?://[^"\'>]+)',
-            r'window\.open\(["\'](https?://[^"\'>]+)',
-            r'<meta[^>]+url=(https?://[^"\'>]+)',
-            r'href=["\'](https?://[^"\'>]+)["\'"][^>]*>\s*(?:Get|Go|Click|Continue|Download|Direct)',
-            r'data-url=["\'](https?://[^"\'>]+)',
-            r'action=["\'](https?://(?!(?:' + re.escape(self.original_domain) + r'))[^"\'>]+)',
-            r'"redirect"\s*:\s*"(https?://[^"]+)"',
-            r'"url"\s*:\s*"(https?://[^"]+)"',
-            r'"destination"\s*:\s*"(https?://[^"]+)"',
-            r'base64["\'\s]*[:,]\s*["\']((?:[A-Za-z0-9+/]{4}){5,}={0,2})',
-        ]
-
-        for pattern in patterns:
-            matches = re.findall(pattern, html, re.I)
-            for match in matches:
-                # Handle base64-encoded URLs
-                if re.match(r'^[A-Za-z0-9+/]{20,}={0,2}$', match):
-                    decoded = try_base64_decode(match)
-                    if decoded and is_valid_url(decoded):
-                        match = decoded
-
-                if is_valid_url(match) and get_domain(match) != self.original_domain:
-                    if is_destination_url(match, self.original_domain):
-                        return match
-        return None
-
-    async def _try_multi_step(self, url: str) -> Optional[str]:
-        """Handle multi-step bypass (initial page -> wait -> form -> destination)."""
-        try:
-            resp = await self.session.get(url, headers=self._headers())
-            if resp.status_code != 200:
-                return None
-
+        if resp.status_code == 200:
             html = resp.text
-            page_url = str(resp.url)
 
-            # Check direct redirect
-            if get_domain(page_url) != self.original_domain:
-                if is_destination_url(page_url, self.original_domain):
-                    return page_url
+            # AdLinkFly flow
+            adf = _extract_adlinkfly_data(html)
+            if adf.get('_token'):
+                wait = min(adf.pop('_wait', 3), 8)
+                import time as _t
+                _t.sleep(wait)
 
-            # Step 1: Extract from source
-            result = await self._try_source_extraction(html)
-            if result:
-                return result
+                parsed = urlparse(url)
+                base = f"{parsed.scheme}://{parsed.netloc}"
+                alias = parsed.path.strip('/').split('/')[-1]
 
-            # Step 2: Try form submission
-            result = await self._try_form_submission(html, page_url)
-            if result:
-                return result
+                if 'alias' not in adf and 'id' not in adf:
+                    adf['alias'] = alias
 
-            # Step 3: Try API endpoints
-            result = await self._try_adlinkfly_api(url)
-            if result:
-                return result
+                for go_url in [f'{base}/links/go', f'{base}/link/go']:
+                    try:
+                        r2 = scraper.post(go_url, data=adf, headers={
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'Origin': base,
+                            'Referer': url,
+                        })
+                        f2 = r2.url
+                        if _is_dest(f2, domain):
+                            return f2
+                        if r2.status_code == 200:
+                            try:
+                                jd = r2.json()
+                                for k in ['url', 'link', 'destination', 'redirect']:
+                                    v = jd.get(k)
+                                    if isinstance(v, str) and _is_dest(v, domain):
+                                        return v
+                            except Exception:
+                                pass
+                    except Exception:
+                        continue
 
-            return None
-        except:
-            return None
-
-    async def bypass(self, url: str) -> Optional[str]:
-        """Main bypass entry point. Tries all strategies."""
-        self.original_url = url
-        self.original_domain = get_domain(url)
-
-        strategies = [
-            self._try_multi_step,
-            self._try_adlinkfly_api,
-        ]
-
-        for strategy in strategies:
-            try:
-                result = await strategy(url)
-                if result and is_valid_url(result):
-                    logger.info(f"[Layer5] Success via {strategy.__name__}: {result[:80]}")
-                    return result
-            except Exception as e:
-                logger.debug(f"[Layer5] {strategy.__name__} failed: {e}")
-                continue
+            candidates = _extract_urls(html, domain)
+            if candidates:
+                return candidates[0]
 
         return None
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _scrape)
+
+
+async def _strategy_httpx_aggressive(url: str) -> Optional[str]:
+    """Strategy 3: httpx with aggressive redirect following."""
+    import httpx
+
+    domain = urlparse(url).netloc
+    ua = random.choice([
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    ])
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=20, verify=False, follow_redirects=True, max_redirects=20,
+            headers={
+                'User-Agent': ua,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+        ) as client:
+            resp = await client.get(url)
+            final = str(resp.url)
+            if _is_dest(final, domain):
+                return final
+
+            if resp.status_code == 200:
+                candidates = _extract_urls(resp.text, domain)
+                if candidates:
+                    return candidates[0]
+    except Exception:
+        pass
+
+    return None
 
 
 async def attempt(url: str) -> Optional[str]:
-    """Layer 5 entry point."""
-    logger.info(f"[Layer5] Advanced bypass for: {url[:80]}")
-    try:
-        async with AdvancedBypasser() as bypasser:
-            return await bypasser.bypass(url)
-    except Exception as e:
-        logger.error(f"[Layer5] Error: {e}")
-        return None
+    """Main entry: try all strategies in order."""
+    logger.info(f"[Layer5] Starting advanced bypass for {url[:80]}")
+
+    strategies = [
+        ("curl_multi", _strategy_curl_multi),
+        ("cloudscraper", _strategy_cloudscraper),
+        ("httpx_aggressive", _strategy_httpx_aggressive),
+    ]
+
+    for name, func in strategies:
+        try:
+            logger.debug(f"[Layer5] Trying {name}")
+            result = await asyncio.wait_for(func(url), timeout=25)
+            if result:
+                logger.info(f"[Layer5] {name} succeeded: {result[:80]}")
+                return result
+        except asyncio.TimeoutError:
+            logger.warning(f"[Layer5] {name} timed out")
+        except Exception as e:
+            logger.warning(f"[Layer5] {name} error: {e}")
+
+    logger.info("[Layer5] All strategies failed")
+    return None
+
+
+# Alias for manager.py import
+try_headless_bypass = attempt
