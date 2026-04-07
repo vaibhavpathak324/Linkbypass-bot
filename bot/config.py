@@ -35,8 +35,8 @@ REDIRECT_TIMEOUT = int(os.getenv("REDIRECT_TIMEOUT", "15"))
 PATTERN_TIMEOUT = int(os.getenv("PATTERN_TIMEOUT", "20"))
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "25"))
 BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "30"))
-HEADLESS_TIMEOUT = int(os.getenv("HEADLESS_TIMEOUT", "45"))
-GLOBAL_BYPASS_TIMEOUT = int(os.getenv("GLOBAL_BYPASS_TIMEOUT", "60"))
+HEADLESS_TIMEOUT = int(os.getenv("HEADLESS_TIMEOUT", "65"))
+GLOBAL_BYPASS_TIMEOUT = int(os.getenv("GLOBAL_BYPASS_TIMEOUT", "90"))
 
 # Max redirect hops
 MAX_REDIRECTS = int(os.getenv("MAX_REDIRECTS", "15"))
@@ -85,5 +85,5 @@ DEFAULT_REFERRAL_COUNT = 3
 DEFAULT_REFERRAL_DAYS = 3
 
 # ── Version ────────────────────────────────────────────────
-BOT_VERSION = "4.0.0"
+BOT_VERSION = "4.1.0"
 BOT_NAME = "LinkBypass Pro"
